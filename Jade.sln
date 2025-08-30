@@ -1,0 +1,61 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{09A145A8-7EF5-4AE2-BE03-51B0071CB3A6}"
+EndProject
+
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F2A71F9B-5D33-465A-A702-920D77279786}"
+EndProject
+
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Jade.Core", "src\Jade.Core\Jade.Core.fsproj", "{E57CAC75-2918-4797-8957-602D1A6A7335}"
+EndProject
+
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Jade.Domain", "src\Jade.Domain\Jade.Domain.fsproj", "{A7A40A21-198E-43F8-A445-51AEA8E60BD7}"
+EndProject
+
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Jade.Example.Console", "src\Jade.Example.Console\Jade.Example.Console.fsproj", "{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0}"
+EndProject
+
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Jade.Tests.Unit", "tests\Jade.Tests.Unit\Jade.Core.Tests.fsproj", "{5034C4F0-B9EC-4E35-B722-622FD0CD1A06}"
+EndProject
+
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Jade.Tests.Integration", "tests\Jade.Tests.Integration\Jade.Tests.Integration.FSharp.fsproj", "{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A}"
+EndProject
+
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E57CAC75-2918-4797-8957-602D1A6A7335}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E57CAC75-2918-4797-8957-602D1A6A7335}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E57CAC75-2918-4797-8957-602D1A6A7335}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E57CAC75-2918-4797-8957-602D1A6A7335}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A7A40A21-198E-43F8-A445-51AEA8E60BD7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A7A40A21-198E-43F8-A445-51AEA8E60BD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A7A40A21-198E-43F8-A445-51AEA8E60BD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A7A40A21-198E-43F8-A445-51AEA8E60BD7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5034C4F0-B9EC-4E35-B722-622FD0CD1A06}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5034C4F0-B9EC-4E35-B722-622FD0CD1A06}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5034C4F0-B9EC-4E35-B722-622FD0CD1A06}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5034C4F0-B9EC-4E35-B722-622FD0CD1A06}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E57CAC75-2918-4797-8957-602D1A6A7335} = {09A145A8-7EF5-4AE2-BE03-51B0071CB3A6}
+		{A7A40A21-198E-43F8-A445-51AEA8E60BD7} = {09A145A8-7EF5-4AE2-BE03-51B0071CB3A6}
+		{B8E9A94C-2F93-4E8C-A8E6-75D3FBE90DA0} = {09A145A8-7EF5-4AE2-BE03-51B0071CB3A6}
+		{5034C4F0-B9EC-4E35-B722-622FD0CD1A06} = {F2A71F9B-5D33-465A-A702-920D77279786}
+		{C2D8B3F1-4E9F-4A82-9A6F-8F5C2E3D4B7A} = {F2A71F9B-5D33-465A-A702-920D77279786}
+	EndGlobalSection
+EndGlobal

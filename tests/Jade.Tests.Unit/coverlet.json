@@ -1,0 +1,12 @@
+{
+  "DataCollectionRunSettings": {
+    "DataCollectors": {
+      "XPlat Code Coverage": {
+        "Configuration": {
+          "Format": ["json", "lcov", "cobertura"],
+          "Include": ["Jade.Core*"]
+        }
+      }
+    }
+  }
+}

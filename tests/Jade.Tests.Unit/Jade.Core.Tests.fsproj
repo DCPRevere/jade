@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ValidationTests.fs" />
+    <Compile Include="EventMetadataTests.fs" />
+    <Compile Include="AggregateTests.fs" />
+    <Compile Include="SnapshotTests.fs" />
+    <Compile Include="CommandBusTests.fs" />
+    <Compile Include="MartenRepositoryTests.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.msbuild" Version="6.0.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Expecto" Version="10.2.1" />
+    <PackageReference Include="Marten" Version="8.7.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
+    <PackageReference Include="FSharp.SystemTextJson" Version="1.4.36" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Jade.Core\Jade.Core.fsproj" />
+  </ItemGroup>
+
+</Project>
