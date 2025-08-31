@@ -8,12 +8,8 @@ open Marten
 open System
 open Testcontainers.PostgreSql
 
-type TestCreated = { Id: Guid; Name: string }
-type TestUpdated = { Id: Guid; NewName: string }
-
-type TestEvent =
-    | Created of TestCreated
-    | Updated of TestUpdated
+type TestCreated = { Id: Guid; Name: string } with interface IEvent
+type TestUpdated = { Id: Guid; NewName: string } with interface IEvent
 
 type TestState = {
     Id: Guid
@@ -21,13 +17,36 @@ type TestState = {
     UpdateCount: int
 }
 
-let init = function
-    | Created e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
-    | Updated e -> { Id = e.Id; Name = e.NewName; UpdateCount = 1 }
+let init (event: IEvent) = 
+    match event with
+    | :? TestCreated as e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
+    | :? TestUpdated as e -> { Id = e.Id; Name = e.NewName; UpdateCount = 1 }
+    | _ -> failwithf "Unknown event type: %A" event
 
-let evolve state = function
-    | Created e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
-    | Updated e -> { state with Name = e.NewName; UpdateCount = state.UpdateCount + 1 }
+let evolve state (event: IEvent) = 
+    match event with
+    | :? TestCreated as e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
+    | :? TestUpdated as e -> { state with Name = e.NewName; UpdateCount = state.UpdateCount + 1 }
+    | _ -> failwithf "Unknown event type: %A" event
+
+type TestCommand = 
+    | Create of TestCreated
+    | Update of TestUpdated
+
+let testAggregate : Aggregate<TestCommand, IEvent, TestState> = {
+    create = fun cmd ->
+        match cmd with
+        | Create e -> Ok [e :> IEvent]
+        | Update _ -> Error "Cannot update non-existing aggregate"
+    
+    decide = fun cmd state ->
+        match cmd with
+        | Create _ -> Error "Cannot create existing aggregate"
+        | Update e -> Ok [e :> IEvent]
+    
+    evolve = evolve
+    init = init
+}
 
 let createTestStore () = async {
     let builder = PostgreSqlBuilder()
@@ -58,7 +77,7 @@ let martenRepositoryTests =
         testCaseAsync "GetById returns error when aggregate doesn't exist" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenAggregateRepository(store, init, evolve) :> IAggregateRepository<TestState, TestEvent>
+                let repository = MartenAggregateRepository(store, testAggregate) :> IAggregateRepository<TestState, IEvent>
                 let aggregateId = Guid.NewGuid()
                 
                 let! result = repository.GetById aggregateId
@@ -75,9 +94,9 @@ let martenRepositoryTests =
         testCaseAsync "Save new aggregate (version 0) creates stream" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenAggregateRepository(store, init, evolve) :> IAggregateRepository<TestState, TestEvent>
+                let repository = MartenAggregateRepository(store, testAggregate) :> IAggregateRepository<TestState, IEvent>
                 let aggregateId = Guid.NewGuid()
-                let events = [ Created { Id = aggregateId; Name = "Test Name" } ]
+                let events : IEvent list = [ { Id = aggregateId; Name = "Test Name" } :> IEvent ]
                 
                 let! saveResult = repository.Save aggregateId events 0L
                 

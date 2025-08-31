@@ -1,6 +1,10 @@
 module Jade.Core.EventSourcing
 
 open System
+open Serilog
+
+/// Base interface for all domain events
+type IEvent = interface end
 
 /// Unique identifier for an aggregate
 type AggregateId = Guid
@@ -13,7 +17,7 @@ type CommandResult<'Event> = {
 }
 
 /// Repository for loading and saving aggregates
-type IAggregateRepository<'State, 'Event> =
+type IAggregateRepository<'State, 'Event when 'Event :> IEvent> =
     abstract member GetById: AggregateId -> Async<Result<'State * int64, string>>
     abstract member Save: AggregateId -> 'Event list -> int64 -> Async<Result<unit, string>>
 
@@ -22,7 +26,7 @@ type ICommandHandler<'Command> =
     abstract member Handle: 'Command -> Async<Result<unit, string>>
 
 /// Idiomatic F# aggregate pattern using record of functions
-type Aggregate<'Command, 'Event, 'State> = {
+type Aggregate<'Command, 'Event, 'State when 'Event :> IEvent> = {
     /// Create a new aggregate from a command (when aggregate doesn't exist)
     create: 'Command -> Result<'Event list, string>
     
@@ -37,15 +41,15 @@ type Aggregate<'Command, 'Event, 'State> = {
 }
 
 /// Helper to build aggregate state from events  
-let rehydrate<'Command, 'Event, 'State> (aggregate: Aggregate<'Command, 'Event, 'State>) (events: 'Event list) =
+let rehydrate<'Command, 'Event, 'State when 'Event :> IEvent> (aggregate: Aggregate<'Command, 'Event, 'State>) (events: 'Event list) : Result<'State, string> =
     match events with
-    | [] -> failwith "Cannot rehydrate from empty event list"
+    | [] -> Error "Cannot rehydrate from empty event list"
     | firstEvent :: remainingEvents -> 
         let initialState = aggregate.init firstEvent
-        remainingEvents |> List.fold aggregate.evolve initialState
+        Ok (remainingEvents |> List.fold aggregate.evolve initialState)
 
 /// Helper to process commands using aggregate pattern
-let processCommand<'Command, 'Event, 'State> 
+let processCommand<'Command, 'Event, 'State when 'Event :> IEvent> 
     (repository: IAggregateRepository<'State, 'Event>)
     (aggregate: Aggregate<'Command, 'Event, 'State>)
     (getId: 'Command -> AggregateId)
@@ -77,7 +81,7 @@ let processCommand<'Command, 'Event, 'State>
 }
 
 /// Generic aggregate command handler
-type AggregateCommandHandler<'Command, 'Event, 'State>
+type AggregateCommandHandler<'Command, 'Event, 'State when 'Event :> IEvent>
     (repository: IAggregateRepository<'State, 'Event>, 
      aggregate: Aggregate<'Command, 'Event, 'State>,
      getId: 'Command -> AggregateId,
@@ -85,12 +89,12 @@ type AggregateCommandHandler<'Command, 'Event, 'State>
     
     interface ICommandHandler<'Command> with
         member this.Handle command = async {
-            printfn "%s Handler received command: %A" handlerName command
+            Log.Information("{HandlerName} Handler received command: {Command}", handlerName, command)
             let! result = processCommand repository aggregate getId command
             
             match result with
-            | Ok () -> printfn "✅ %s Handler processed command successfully" handlerName
-            | Error err -> printfn "❌ %s Handler failed: %s" handlerName err
+            | Ok () -> Log.Information("{HandlerName} Handler processed command successfully", handlerName)
+            | Error err -> Log.Error("{HandlerName} Handler failed: {ErrorMessage}", handlerName, err)
             
             return result
         }

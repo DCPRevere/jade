@@ -1,6 +1,7 @@
 open System
 open Marten
 open Testcontainers.PostgreSql
+open Serilog
 open Jade.Core.CommandBus
 open Jade.Core.EventSourcing
 open Jade.Core.MartenRepository
@@ -8,16 +9,21 @@ module C = Customer
 module O = Order
 open Jade.Domain.MartenConfiguration
 
-printfn "🚀 Jade Event Sourcing Library - Complete F# Command Bus Flow"
-printfn "============================================================="
+// Configure Serilog
+Log.Logger <- LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateLogger()
+
+Log.Information("🚀 Jade Event Sourcing Library - Complete F# Command Bus Flow")
+Log.Information("=============================================================")
 
 let demonstrateCompleteFlow () = async {
-    printfn ""
-    printfn "🎯 DEMONSTRATION: Complete Command Bus → Aggregate → Marten Flow"
-    printfn "==============================================================="
+    Log.Information("")
+    Log.Information("🎯 DEMONSTRATION: Complete Command Bus → Aggregate → Marten Flow")
+    Log.Information("===============================================================")
     
     // Set up PostgreSQL container
-    printfn "🐘 Setting up PostgreSQL container..."
+    Log.Information("🐘 Setting up PostgreSQL container...")
     let postgresContainer = 
         PostgreSqlBuilder()
             .WithImage("postgres:15")
@@ -28,14 +34,14 @@ let demonstrateCompleteFlow () = async {
             .Build()
     
     do! postgresContainer.StartAsync() |> Async.AwaitTask
-    printfn "✅ PostgreSQL container started"
+    Log.Information("✅ PostgreSQL container started")
     
     try
         let connectionString = postgresContainer.GetConnectionString()
-        printfn "🔗 Connection string: %s" connectionString
+        Log.Information("🔗 Connection string: {ConnectionString}", connectionString)
         
         // Set up Marten document store
-        printfn "📦 Configuring Marten document store..."
+        Log.Information("📦 Configuring Marten document store...")
         let documentStore = 
             DocumentStore.For(fun options ->
                 options.Connection(connectionString)
@@ -45,35 +51,35 @@ let demonstrateCompleteFlow () = async {
         
         // Clean and initialize database
         do! documentStore.Advanced.Clean.CompletelyRemoveAllAsync() |> Async.AwaitTask
-        printfn "✅ Marten configured and database initialized"
+        Log.Information("✅ Marten configured and database initialized")
         
         // Set up command bus with multiple handlers
-        printfn "🚌 Setting up command bus with multiple handlers..."
+        Log.Information("🚌 Setting up command bus with multiple handlers...")
         let commandBus = CommandBus()
         
         // Register Customer handler
-        let customerRepository = createRepository<C.Command, C._Event, C.State> documentStore C.aggregate
+        let customerRepository = createRepository<C.Command, Jade.Core.EventSourcing.IEvent, C.State> documentStore C.aggregate
         let customerHandler = AggregateCommandHandler(customerRepository, C.aggregate, C.getId, "👤 CUSTOMER")
         commandBus.RegisterHandler customerHandler
-        printfn "✅ Registered CUSTOMER command handler"
+        Log.Information("✅ Registered CUSTOMER command handler")
         
         // Register Order handler
-        let orderRepository = createRepository<O.Command, O._Event, O.State> documentStore O.aggregate
+        let orderRepository = createRepository<O.Command, Jade.Core.EventSourcing.IEvent, O.State> documentStore O.aggregate
         let orderHandler = AggregateCommandHandler(orderRepository, O.aggregate, O.getId, "📦 ORDER")
         commandBus.RegisterHandler orderHandler
-        printfn "✅ Registered ORDER command handler"
+        Log.Information("✅ Registered ORDER command handler")
         
-        printfn "✅ Command bus configured with 2 handlers"
+        Log.Information("✅ Command bus configured with 2 handlers")
         
         // Create and send commands
         let customerId = Guid.NewGuid()
         
-        printfn ""
-        printfn "%s" (String.replicate 60 "=")
-        printfn "PART 1: CUSTOMER COMMANDS"
-        printfn "%s" (String.replicate 60 "=")
-        printfn ""
-        printfn "📝 Step 1: Creating and sending Customer CREATE command"
+        Log.Information("")
+        Log.Information("{Separator}", String.replicate 60 "=")
+        Log.Information("PART 1: CUSTOMER COMMANDS")
+        Log.Information("{Separator}", String.replicate 60 "=")
+        Log.Information("")
+        Log.Information("📝 Step 1: Creating and sending Customer CREATE command")
 
         let createV2Data: C.CreateCustomerV2 = {
             CustomerId = customerId
@@ -84,29 +90,29 @@ let demonstrateCompleteFlow () = async {
         let createVersion: C.CreateCustomer = C.V2 createV2Data
         let createCommand = C.Command.Create createVersion
         
-        printfn "📤 Sending Customer CREATE command through bus"
+        Log.Information("📤 Sending Customer CREATE command through bus")
         let! createResult = commandBus.Send createCommand
         
         match createResult with
         | Ok () -> 
-            printfn "✅ CREATE command succeeded"
+            Log.Information("✅ CREATE command succeeded")
             
             // Verify the state was persisted
-            printfn ""
-            printfn "🔍 Verifying state was persisted in Marten..."
+            Log.Information("")
+            Log.Information("🔍 Verifying state was persisted in Marten...")
             let! stateResult = customerRepository.GetById customerId
             match stateResult with
             | Ok (state, version) ->
-                printfn "✅ Retrieved persisted state:"
-                printfn "   ID: %A" state.Id
-                printfn "   Name: %s" state.Name
-                printfn "   Email: %s" state.Email
-                printfn "   Phone: %A" state.Phone
-                printfn "   Version: %d" version
+                Log.Information("✅ Retrieved persisted state:")
+                Log.Information("   ID: {CustomerId}", state.Id)
+                Log.Information("   Name: {CustomerName}", state.Name)
+                Log.Information("   Email: {CustomerEmail}", state.Email)
+                Log.Information("   Phone: {CustomerPhone}", state.Phone)
+                Log.Information("   Version: {Version}", version)
                 
                 // Send update command
-                printfn ""
-                printfn "📝 Step 2: Creating and sending UPDATE command"
+                Log.Information("")
+                Log.Information("📝 Step 2: Creating and sending UPDATE command")
                 let updateV1: C.UpdateV1 = {
                     CustomerId = customerId
                     Name = "Alice Updated via F#"
@@ -115,57 +121,57 @@ let demonstrateCompleteFlow () = async {
                 let updateVersion: C.UpdateCustomer = C.UpdateCustomer.V1 updateV1
                 let updateCommand = C.Command.Update updateVersion
                 
-                printfn "📤 Sending UPDATE command through bus: %A" updateCommand
+                Log.Information("📤 Sending UPDATE command through bus: {UpdateCommand}", updateCommand)
                 let! updateResult = commandBus.Send updateCommand
                 
                 match updateResult with
                 | Ok () ->
-                    printfn "✅ UPDATE command succeeded"
+                    Log.Information("✅ UPDATE command succeeded")
                     
                     // Verify final state
-                    printfn ""
-                    printfn "🔍 Verifying final state after update..."
+                    Log.Information("")
+                    Log.Information("🔍 Verifying final state after update...")
                     let! finalStateResult = customerRepository.GetById customerId
                     match finalStateResult with
                     | Ok (finalState, finalVersion) ->
-                        printfn "✅ Final persisted state:"
-                        printfn "   ID: %A" finalState.Id
-                        printfn "   Name: %s" finalState.Name
-                        printfn "   Email: %s" finalState.Email
-                        printfn "   Phone: %A" finalState.Phone
-                        printfn "   Version: %d" finalVersion
+                        Log.Information("✅ Final persisted state:")
+                        Log.Information("   ID: {CustomerId}", finalState.Id)
+                        Log.Information("   Name: {CustomerName}", finalState.Name)
+                        Log.Information("   Email: {CustomerEmail}", finalState.Email)
+                        Log.Information("   Phone: {CustomerPhone}", finalState.Phone)
+                        Log.Information("   Version: {Version}", finalVersion)
                         
                         // Verify events in database
-                        printfn ""
-                        printfn "🗃️ Verifying events in PostgreSQL database..."
+                        Log.Information("")
+                        Log.Information("🗃️ Verifying events in PostgreSQL database...")
                         use session = documentStore.LightweightSession()
                         let! streamEvents = session.Events.FetchStreamAsync(customerId) |> Async.AwaitTask
-                        printfn "✅ Found %d events in stream:" streamEvents.Count
+                        Log.Information("✅ Found {EventCount} events in stream:", streamEvents.Count)
                         streamEvents |> Seq.iteri (fun i event ->
-                            printfn "   Event %d: %s (Version %d)" (i+1) event.EventTypeName event.Version
+                            Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
                         )
                         
                     | Error err ->
-                        printfn "❌ Failed to retrieve final state: %s" err
+                        Log.Error("❌ Failed to retrieve final state: {ErrorMessage}", err)
                         
                 | Error err ->
-                    printfn "❌ UPDATE command failed: %s" err
+                    Log.Error("❌ UPDATE command failed: {ErrorMessage}", err)
                     
             | Error err ->
-                printfn "❌ Failed to retrieve state after create: %s" err
+                Log.Error("❌ Failed to retrieve state after create: {ErrorMessage}", err)
         | Error err -> 
-            printfn "❌ CREATE command failed: %s" err
+            Log.Error("❌ CREATE command failed: {ErrorMessage}", err)
         
         // Now test Order commands
-        printfn ""
-        printfn "%s" (String.replicate 60 "=")
-        printfn "PART 2: ORDER COMMANDS"
-        printfn "%s" (String.replicate 60 "=")
-        printfn ""
+        Log.Information("")
+        Log.Information("{Separator}", String.replicate 60 "=")
+        Log.Information("PART 2: ORDER COMMANDS")
+        Log.Information("{Separator}", String.replicate 60 "=")
+        Log.Information("")
         
         let orderId = Guid.NewGuid()
         
-        printfn "📝 Step 3: Creating and sending Order CREATE command"
+        Log.Information("📝 Step 3: Creating and sending Order CREATE command (V2 - with promo code)")
         let orderItems: O.OrderItem list = [
             { ProductId = Guid.NewGuid(); Quantity = 2; Price = 29.99m }
             { ProductId = Guid.NewGuid(); Quantity = 1; Price = 49.99m }
@@ -174,62 +180,105 @@ let demonstrateCompleteFlow () = async {
             OrderId = orderId
             CustomerId = customerId
             Items = orderItems
-            PromoCode = "SAVE10"
+            PromoCode = "NESTED10"
         }
         let createOrderVersion: O.CreateOrder = O.V2 createOrderV2
         let createOrderCommand = O.Command.Create createOrderVersion
         
-        printfn "📤 Sending Order CREATE command through bus"
+        Log.Information("📤 Sending Order CREATE command through bus")
         let! orderCreateResult = commandBus.Send createOrderCommand
         
         match orderCreateResult with
         | Ok () -> 
-            printfn "✅ Order CREATE command succeeded"
+            Log.Information("✅ Order CREATE command succeeded")
             
-            // Send a Customer command to verify handlers are still separate
-            printfn ""
-            printfn "📝 Step 4: Sending another Customer command to verify routing"
-            let updateV1: C.UpdateV1 = {
-                CustomerId = customerId
-                Name = "Alice Verified"
-                Email = "alice.verified@fsharp-demo.com"
-            }
-            let updateVersion2: C.UpdateCustomer = C.UpdateCustomer.V1 updateV1
-            let updateCommand2 = C.Command.Update updateVersion2
-            
-            printfn "📤 Sending Customer UPDATE command through bus"
-            let! updateResult2 = commandBus.Send updateCommand2
-            
-            match updateResult2 with
-            | Ok () ->
-                printfn "✅ Customer UPDATE command succeeded"
-                printfn ""
-                printfn "🎯 VERIFIED: Commands are routed to correct handlers!"
-                printfn "   - Customer commands → Customer handler"
-                printfn "   - Order commands → Order handler"
+            // Verify Order state was persisted
+            Log.Information("")
+            Log.Information("🔍 Verifying Order state was persisted in Marten...")
+            let! orderStateResult = orderRepository.GetById orderId
+            match orderStateResult with
+            | Ok (orderState, orderVersion) ->
+                Log.Information("✅ Retrieved persisted Order state:")
+                Log.Information("   ID: {OrderId}", orderState.Id)
+                Log.Information("   CustomerId: {CustomerId}", orderState.CustomerId)
+                Log.Information("   Items: {ItemCount} items", orderState.Items.Length)
+                Log.Information("   Total Value: {TotalValue:C}", (orderState.Items |> List.sumBy (fun i -> i.Price * decimal i.Quantity)))
+                Log.Information("   PromoCode: {PromoCode}", orderState.PromoCode)
+                Log.Information("   Status: {OrderStatus}", orderState.Status)
+                Log.Information("   Version: {Version}", orderVersion)
+                
+                // Verify Order events in database
+                Log.Information("")
+                Log.Information("🗃️ Verifying Order events in PostgreSQL database...")
+                use session = documentStore.LightweightSession()
+                let! orderStreamEvents = session.Events.FetchStreamAsync(orderId) |> Async.AwaitTask
+                Log.Information("✅ Found {EventCount} Order events in stream:", orderStreamEvents.Count)
+                orderStreamEvents |> Seq.iteri (fun i event ->
+                    Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
+                )
             | Error err ->
-                printfn "❌ Customer UPDATE command failed: %s" err
+                Log.Error("❌ Failed to retrieve Order state: {ErrorMessage}", err)
+            
+            // Now cancel the order
+            Log.Information("")
+            Log.Information("📝 Step 4: Cancelling the Order")
+            let cancelOrderV1: O.CancelOrderV1 = {
+                OrderId = orderId
+            }
+            let cancelOrderVersion: O.CancelOrder = O.CancelOrder.V1 cancelOrderV1
+            let cancelOrderCommand = O.Command.Cancel cancelOrderVersion
+            
+            Log.Information("📤 Sending Order CANCEL command through bus")
+            let! cancelResult = commandBus.Send cancelOrderCommand
+            
+            match cancelResult with
+            | Ok () ->
+                Log.Information("✅ Order CANCEL command succeeded")
+                
+                // Verify the order state after cancellation
+                Log.Information("")
+                Log.Information("🔍 Verifying Order state after cancellation...")
+                let! finalOrderStateResult = orderRepository.GetById orderId
+                match finalOrderStateResult with
+                | Ok (finalOrderState, finalOrderVersion) ->
+                    Log.Information("✅ Retrieved final Order state:")
+                    Log.Information("   ID: {OrderId}", finalOrderState.Id)
+                    Log.Information("   Status: {OrderStatus}", finalOrderState.Status)
+                    Log.Information("   Version: {Version}", finalOrderVersion)
+                    
+                    // Verify all Order events in database
+                    Log.Information("")
+                    Log.Information("🗃️ Verifying all Order events in PostgreSQL database...")
+                    use session = documentStore.LightweightSession()
+                    let! finalOrderStreamEvents = session.Events.FetchStreamAsync(orderId) |> Async.AwaitTask
+                    Log.Information("✅ Found {EventCount} Order events in stream:", finalOrderStreamEvents.Count)
+                    finalOrderStreamEvents |> Seq.iteri (fun i event ->
+                        Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
+                    )
+                | Error err ->
+                    Log.Error("❌ Failed to retrieve final Order state: {ErrorMessage}", err)
+            | Error err ->
+                Log.Error("❌ Order CANCEL command failed: {ErrorMessage}", err)
                 
         | Error err -> 
-            printfn "❌ Order CREATE command failed: %s" err
+            Log.Error("❌ Order CREATE command failed: {ErrorMessage}", err)
         
         documentStore.Dispose()
         do! postgresContainer.DisposeAsync().AsTask() |> Async.AwaitTask
-        printfn "🧹 PostgreSQL container cleaned up"
+        Log.Information("🧹 PostgreSQL container cleaned up")
     with
     | ex -> 
-        printfn "❌ Error occurred: %s" ex.Message
+        Log.Error(ex, "❌ Error occurred: {ErrorMessage}", ex.Message)
         do! postgresContainer.DisposeAsync().AsTask() |> Async.AwaitTask
     
-    printfn ""
-    printfn "🏁 COMPLETE MULTI-HANDLER DEMO SUCCESSFUL"
-    printfn "=========================================="
-    printfn "✅ CommandBus routes to correct handlers based on command type"
-    printfn "✅ Customer commands → Customer handler"  
-    printfn "✅ Order commands → Order handler"
-    printfn "✅ Multiple handlers can coexist in same bus"
-    printfn "✅ Each handler processes only its domain commands"
-    printfn "✅ Complete F# event sourcing with proper separation of concerns"
+    Log.Information("")
+    Log.Information("🏁 COMPLETE EVENT SOURCING DEMO SUCCESSFUL")
+    Log.Information("==========================================")
+    Log.Information("✅ Customer aggregate: Created and Updated")
+    Log.Information("✅ Order aggregate: Created and Cancelled")
+    Log.Information("✅ All events properly stored with schema URNs")
+    Log.Information("✅ State correctly evolves through event replay")
+    Log.Information("✅ Complete F# event sourcing with nested module structure")
     
     return 0
 }

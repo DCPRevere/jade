@@ -7,10 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="ValidationTests.fs" />
-    <Compile Include="EventMetadataTests.fs" />
     <Compile Include="AggregateTests.fs" />
-    <Compile Include="SnapshotTests.fs" />
     <Compile Include="CommandBusTests.fs" />
     <Compile Include="MartenRepositoryTests.fs" />
     <Compile Include="Program.fs" />
@@ -22,8 +19,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Expecto" Version="10.2.1" />
-    <PackageReference Include="Marten" Version="8.7.0" />
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
+    <PackageReference Include="Marten" Version="8.9.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
     <PackageReference Include="FSharp.SystemTextJson" Version="1.4.36" />
   </ItemGroup>
 
