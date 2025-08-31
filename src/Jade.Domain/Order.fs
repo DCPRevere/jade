@@ -35,6 +35,7 @@ module Command =
     module Cancel =
         type V1 = {
             OrderId: Guid
+            CustomerId: Guid
         } with
             static member toSchema =
                 $"urn:schema:jade:command:order:cancel:1"
@@ -78,6 +79,7 @@ module Event =
     module Cancelled =
         type V1 = {
             OrderId: Guid
+            CustomerId: Guid
         } with
             interface IEvent
             static member toSchema =
@@ -116,7 +118,7 @@ let decide command state : Result<IEvent list, string> =
     | Cancel version -> 
         match version with
         | CancelOrder.V1 cmd -> 
-            Ok [ ({ OrderId = cmd.OrderId } : Event.Cancelled.V1) :> IEvent ]
+            Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId } : Event.Cancelled.V1) :> IEvent ]
 
 let init (event: IEvent) : State =
     match event with
@@ -125,7 +127,7 @@ let init (event: IEvent) : State =
     | :? Event.Created.V2 as e -> 
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = Some e.PromoCode }
     | :? Event.Cancelled.V1 as e -> 
-        { Id = e.OrderId; CustomerId = Guid.Empty; Items = []; Status = OrderStatus.Cancelled; PromoCode = None }
+        { Id = e.OrderId; CustomerId = e.CustomerId; Items = []; Status = OrderStatus.Cancelled; PromoCode = None }
     | _ -> failwithf "Unknown event type: %A" event
 
 let evolve state (event: IEvent) : State =

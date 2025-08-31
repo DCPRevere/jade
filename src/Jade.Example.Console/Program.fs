@@ -8,6 +8,7 @@ open Jade.Core.MartenRepository
 module C = Customer
 module O = Order
 open Jade.Domain.MartenConfiguration
+open Jade.Domain.Projections.CustomerWithOrders
 
 // Configure Serilog
 Log.Logger <- LoggerConfiguration()
@@ -40,13 +41,17 @@ let demonstrateCompleteFlow () = async {
         let connectionString = postgresContainer.GetConnectionString()
         Log.Information("🔗 Connection string: {ConnectionString}", connectionString)
         
-        // Set up Marten document store
+        // Set up Marten document store with async daemon enabled
         Log.Information("📦 Configuring Marten document store...")
         let documentStore = 
             DocumentStore.For(fun options ->
                 options.Connection(connectionString)
                 options.AutoCreateSchemaObjects <- JasperFx.AutoCreate.All
                 options.DatabaseSchemaName <- "jade_events"
+                
+                // Enable async daemon for projections
+                // options.Projections.AsyncMode <- JasperFx.Events.Daemon.DaemonMode.Solo
+                
                 configureDomainMarten options)
         
         // Clean and initialize database
@@ -79,7 +84,7 @@ let demonstrateCompleteFlow () = async {
         Log.Information("PART 1: CUSTOMER COMMANDS")
         Log.Information("{Separator}", String.replicate 60 "=")
         Log.Information("")
-        Log.Information("📝 Step 1: Creating and sending Customer CREATE command")
+        Log.Information("📝 Step 1: Customer.Create.V2")
 
         let createV2Data: C.CreateCustomerV2 = {
             CustomerId = customerId
@@ -90,29 +95,20 @@ let demonstrateCompleteFlow () = async {
         let createVersion: C.CreateCustomer = C.V2 createV2Data
         let createCommand = C.Command.Create createVersion
         
-        Log.Information("📤 Sending Customer CREATE command through bus")
+        Log.Information("📤 Sending Customer.Create.V2 through bus")
         let! createResult = commandBus.Send createCommand
         
         match createResult with
         | Ok () -> 
-            Log.Information("✅ CREATE command succeeded")
-            
-            // Verify the state was persisted
-            Log.Information("")
+            Log.Information("✅ Customer.Create.V2 command succeeded")
             Log.Information("🔍 Verifying state was persisted in Marten...")
             let! stateResult = customerRepository.GetById customerId
             match stateResult with
             | Ok (state, version) ->
-                Log.Information("✅ Retrieved persisted state:")
-                Log.Information("   ID: {CustomerId}", state.Id)
-                Log.Information("   Name: {CustomerName}", state.Name)
-                Log.Information("   Email: {CustomerEmail}", state.Email)
-                Log.Information("   Phone: {CustomerPhone}", state.Phone)
-                Log.Information("   Version: {Version}", version)
+                Log.Information("✅ Retrieved persisted state: {state}, {version}", state, version)
                 
-                // Send update command
                 Log.Information("")
-                Log.Information("📝 Step 2: Creating and sending UPDATE command")
+                Log.Information("📝 Step 2: Customer.Update.V1")
                 let updateV1: C.UpdateV1 = {
                     CustomerId = customerId
                     Name = "Alice Updated via F#"
@@ -121,12 +117,12 @@ let demonstrateCompleteFlow () = async {
                 let updateVersion: C.UpdateCustomer = C.UpdateCustomer.V1 updateV1
                 let updateCommand = C.Command.Update updateVersion
                 
-                Log.Information("📤 Sending UPDATE command through bus: {UpdateCommand}", updateCommand)
+                Log.Information("📤 Sending Customer.Update.V1 through bus: {UpdateCommand}", updateCommand)
                 let! updateResult = commandBus.Send updateCommand
                 
                 match updateResult with
                 | Ok () ->
-                    Log.Information("✅ UPDATE command succeeded")
+                    Log.Information("✅ Customer.Update.V1 command succeeded")
                     
                     // Verify final state
                     Log.Information("")
@@ -134,12 +130,7 @@ let demonstrateCompleteFlow () = async {
                     let! finalStateResult = customerRepository.GetById customerId
                     match finalStateResult with
                     | Ok (finalState, finalVersion) ->
-                        Log.Information("✅ Final persisted state:")
-                        Log.Information("   ID: {CustomerId}", finalState.Id)
-                        Log.Information("   Name: {CustomerName}", finalState.Name)
-                        Log.Information("   Email: {CustomerEmail}", finalState.Email)
-                        Log.Information("   Phone: {CustomerPhone}", finalState.Phone)
-                        Log.Information("   Version: {Version}", finalVersion)
+                        Log.Information("✅ Final persisted state: {state}, {version}", finalState, finalVersion)
                         
                         // Verify events in database
                         Log.Information("")
@@ -155,12 +146,12 @@ let demonstrateCompleteFlow () = async {
                         Log.Error("❌ Failed to retrieve final state: {ErrorMessage}", err)
                         
                 | Error err ->
-                    Log.Error("❌ UPDATE command failed: {ErrorMessage}", err)
+                    Log.Error("❌ Customer.Update.V1 command failed: {ErrorMessage}", err)
                     
             | Error err ->
                 Log.Error("❌ Failed to retrieve state after create: {ErrorMessage}", err)
         | Error err -> 
-            Log.Error("❌ CREATE command failed: {ErrorMessage}", err)
+            Log.Error("❌ Customer.Create.V2 command failed: {ErrorMessage}", err)
         
         // Now test Order commands
         Log.Information("")
@@ -171,7 +162,7 @@ let demonstrateCompleteFlow () = async {
         
         let orderId = Guid.NewGuid()
         
-        Log.Information("📝 Step 3: Creating and sending Order CREATE command (V2 - with promo code)")
+        Log.Information("📝 Step 3: Order.Create.V2")
         let orderItems: O.OrderItem list = [
             { ProductId = Guid.NewGuid(); Quantity = 2; Price = 29.99m }
             { ProductId = Guid.NewGuid(); Quantity = 1; Price = 49.99m }
@@ -185,12 +176,12 @@ let demonstrateCompleteFlow () = async {
         let createOrderVersion: O.CreateOrder = O.V2 createOrderV2
         let createOrderCommand = O.Command.Create createOrderVersion
         
-        Log.Information("📤 Sending Order CREATE command through bus")
+        Log.Information("📤 Sending Order.Create.V2 through bus")
         let! orderCreateResult = commandBus.Send createOrderCommand
         
         match orderCreateResult with
         | Ok () -> 
-            Log.Information("✅ Order CREATE command succeeded")
+            Log.Information("✅ Order.Create.V2 command succeeded")
             
             // Verify Order state was persisted
             Log.Information("")
@@ -198,14 +189,7 @@ let demonstrateCompleteFlow () = async {
             let! orderStateResult = orderRepository.GetById orderId
             match orderStateResult with
             | Ok (orderState, orderVersion) ->
-                Log.Information("✅ Retrieved persisted Order state:")
-                Log.Information("   ID: {OrderId}", orderState.Id)
-                Log.Information("   CustomerId: {CustomerId}", orderState.CustomerId)
-                Log.Information("   Items: {ItemCount} items", orderState.Items.Length)
-                Log.Information("   Total Value: {TotalValue:C}", (orderState.Items |> List.sumBy (fun i -> i.Price * decimal i.Quantity)))
-                Log.Information("   PromoCode: {PromoCode}", orderState.PromoCode)
-                Log.Information("   Status: {OrderStatus}", orderState.Status)
-                Log.Information("   Version: {Version}", orderVersion)
+                Log.Information("✅ Retrieved persisted Order state: {orderState}, {orderVersion}", orderState, orderVersion)
                 
                 // Verify Order events in database
                 Log.Information("")
@@ -224,6 +208,7 @@ let demonstrateCompleteFlow () = async {
             Log.Information("📝 Step 4: Cancelling the Order")
             let cancelOrderV1: O.CancelOrderV1 = {
                 OrderId = orderId
+                CustomerId = customerId
             }
             let cancelOrderVersion: O.CancelOrder = O.CancelOrder.V1 cancelOrderV1
             let cancelOrderCommand = O.Command.Cancel cancelOrderVersion
@@ -241,10 +226,7 @@ let demonstrateCompleteFlow () = async {
                 let! finalOrderStateResult = orderRepository.GetById orderId
                 match finalOrderStateResult with
                 | Ok (finalOrderState, finalOrderVersion) ->
-                    Log.Information("✅ Retrieved final Order state:")
-                    Log.Information("   ID: {OrderId}", finalOrderState.Id)
-                    Log.Information("   Status: {OrderStatus}", finalOrderState.Status)
-                    Log.Information("   Version: {Version}", finalOrderVersion)
+                    Log.Information("✅ Retrieved final Order state: {finalOrderState}, {finalOrderVersion}", finalOrderState, finalOrderVersion)
                     
                     // Verify all Order events in database
                     Log.Information("")
@@ -261,7 +243,32 @@ let demonstrateCompleteFlow () = async {
                 Log.Error("❌ Order CANCEL command failed: {ErrorMessage}", err)
                 
         | Error err -> 
-            Log.Error("❌ Order CREATE command failed: {ErrorMessage}", err)
+            Log.Error("❌ Order.Create.V2 command failed: {ErrorMessage}", err)
+        
+        // Test the CustomerWithOrders projection
+        Log.Information("")
+        Log.Information("============================================================")
+        Log.Information("PART 3: ASYNC PROJECTION TESTING")
+        Log.Information("============================================================")
+        Log.Information("")
+        
+        // Event projection should already be built because it is inline
+        
+        // Query the projection
+        Log.Information("🔄 Querying CustomerWithOrders projection for customer {CustomerId}...", customerId)
+        use session = documentStore.QuerySession()
+        let! projection = session.LoadAsync<CustomerWithOrders>(customerId) |> Async.AwaitTask
+        
+        match box projection with
+        | null ->
+            Log.Warning("⚠️ CustomerWithOrders projection not found for customer {CustomerId}", customerId)
+            
+            let! allProjections = session.Query<CustomerWithOrders>().ToListAsync() |> Async.AwaitTask
+            Log.Information("📋 Found {Count} CustomerWithOrders documents total", allProjections.Count)
+            
+        | _ ->
+            Log.Information("✅ CustomerWithOrders projection found and built successfully:")
+            Log.Information("   CustomerWithOrders: {cw}", projection)
         
         documentStore.Dispose()
         do! postgresContainer.DisposeAsync().AsTask() |> Async.AwaitTask
@@ -270,15 +277,6 @@ let demonstrateCompleteFlow () = async {
     | ex -> 
         Log.Error(ex, "❌ Error occurred: {ErrorMessage}", ex.Message)
         do! postgresContainer.DisposeAsync().AsTask() |> Async.AwaitTask
-    
-    Log.Information("")
-    Log.Information("🏁 COMPLETE EVENT SOURCING DEMO SUCCESSFUL")
-    Log.Information("==========================================")
-    Log.Information("✅ Customer aggregate: Created and Updated")
-    Log.Information("✅ Order aggregate: Created and Cancelled")
-    Log.Information("✅ All events properly stored with schema URNs")
-    Log.Information("✅ State correctly evolves through event replay")
-    Log.Information("✅ Complete F# event sourcing with nested module structure")
     
     return 0
 }
