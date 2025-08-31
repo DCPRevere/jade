@@ -64,14 +64,14 @@ let demonstrateCompleteFlow () = async {
         
         // Register Customer handler
         let customerRepository = createRepository<C.Command, Jade.Core.EventSourcing.IEvent, C.State> documentStore C.aggregate
-        let customerHandler = AggregateCommandHandler(customerRepository, C.aggregate, C.getId, "👤 CUSTOMER")
-        commandBus.RegisterHandler customerHandler
+        let customerHandler = C.CustomerCommandHandler(customerRepository)
+        commandBus.RegisterDomainHandler customerHandler
         Log.Information("✅ Registered CUSTOMER command handler")
         
         // Register Order handler
         let orderRepository = createRepository<O.Command, Jade.Core.EventSourcing.IEvent, O.State> documentStore O.aggregate
-        let orderHandler = AggregateCommandHandler(orderRepository, O.aggregate, O.getId, "📦 ORDER")
-        commandBus.RegisterHandler orderHandler
+        let orderHandler = O.OrderCommandHandler(orderRepository)
+        commandBus.RegisterDomainHandler orderHandler
         Log.Information("✅ Registered ORDER command handler")
         
         Log.Information("✅ Command bus configured with 2 handlers")
@@ -84,23 +84,21 @@ let demonstrateCompleteFlow () = async {
         Log.Information("PART 1: CUSTOMER COMMANDS")
         Log.Information("{Separator}", String.replicate 60 "=")
         Log.Information("")
-        Log.Information("📝 Step 1: Customer.Create.V2")
+        Log.Information("📝 Step 1: Customer.Create.V1 (should produce Created.V2 event)")
 
-        let createV2Data: C.CreateCustomerV2 = {
-            CustomerId = customerId
-            Name = "Alice F# User"
-            Email = "alice@fsharp-demo.com"
-            Phone = "+1-555-F#"
-        }
-        let createVersion: C.CreateCustomer = C.V2 createV2Data
-        let createCommand = C.Command.Create createVersion
+        let createCommand = 
+            { 
+                CustomerId = customerId
+                Name = "Alice F# User"
+                Email = "alice@fsharp-demo.com"
+            } : C.Command.Create.V1
         
-        Log.Information("📤 Sending Customer.Create.V2 through bus")
+        Log.Information("📤 Sending Customer.Create.V1 through bus (expecting Created.V2 event)")
         let! createResult = commandBus.Send createCommand
         
         match createResult with
         | Ok () -> 
-            Log.Information("✅ Customer.Create.V2 command succeeded")
+            Log.Information("✅ Customer.Create.V1 command succeeded (produced V2 event)")
             Log.Information("🔍 Verifying state was persisted in Marten...")
             let! stateResult = customerRepository.GetById customerId
             match stateResult with
@@ -109,13 +107,12 @@ let demonstrateCompleteFlow () = async {
                 
                 Log.Information("")
                 Log.Information("📝 Step 2: Customer.Update.V1")
-                let updateV1: C.UpdateV1 = {
-                    CustomerId = customerId
-                    Name = "Alice Updated via F#"
-                    Email = "alice.updated@fsharp-demo.com"
-                }
-                let updateVersion: C.UpdateCustomer = C.UpdateCustomer.V1 updateV1
-                let updateCommand = C.Command.Update updateVersion
+                let updateCommand = 
+                    {
+                        CustomerId = customerId
+                        Name = "Alice Updated via F#"
+                        Email = "alice.updated@fsharp-demo.com"
+                    } : C.Command.Update.V1
                 
                 Log.Information("📤 Sending Customer.Update.V1 through bus: {UpdateCommand}", updateCommand)
                 let! updateResult = commandBus.Send updateCommand
@@ -151,7 +148,7 @@ let demonstrateCompleteFlow () = async {
             | Error err ->
                 Log.Error("❌ Failed to retrieve state after create: {ErrorMessage}", err)
         | Error err -> 
-            Log.Error("❌ Customer.Create.V2 command failed: {ErrorMessage}", err)
+            Log.Error("❌ Customer.Create.V1 command failed: {ErrorMessage}", err)
         
         // Now test Order commands
         Log.Information("")
@@ -162,19 +159,18 @@ let demonstrateCompleteFlow () = async {
         
         let orderId = Guid.NewGuid()
         
-        Log.Information("📝 Step 3: Order.Create.V2")
+        Log.Information("📝 Step 3: Order.Create.V2 (with optional promo code)")
         let orderItems: O.OrderItem list = [
             { ProductId = Guid.NewGuid(); Quantity = 2; Price = 29.99m }
             { ProductId = Guid.NewGuid(); Quantity = 1; Price = 49.99m }
         ]
-        let createOrderV2: O.CreateOrderV2 = {
-            OrderId = orderId
-            CustomerId = customerId
-            Items = orderItems
-            PromoCode = "NESTED10"
-        }
-        let createOrderVersion: O.CreateOrder = O.V2 createOrderV2
-        let createOrderCommand = O.Command.Create createOrderVersion
+        let createOrderCommand = 
+            {
+                OrderId = orderId
+                CustomerId = customerId
+                Items = orderItems
+                PromoCode = Some "NESTED10"
+            } : O.Command.Create.V2
         
         Log.Information("📤 Sending Order.Create.V2 through bus")
         let! orderCreateResult = commandBus.Send createOrderCommand
@@ -206,12 +202,11 @@ let demonstrateCompleteFlow () = async {
             // Now cancel the order
             Log.Information("")
             Log.Information("📝 Step 4: Cancelling the Order")
-            let cancelOrderV1: O.CancelOrderV1 = {
-                OrderId = orderId
-                CustomerId = customerId
-            }
-            let cancelOrderVersion: O.CancelOrder = O.CancelOrder.V1 cancelOrderV1
-            let cancelOrderCommand = O.Command.Cancel cancelOrderVersion
+            let cancelOrderCommand = 
+                {
+                    OrderId = orderId
+                    CustomerId = customerId
+                } : O.Command.Cancel.V1
             
             Log.Information("📤 Sending Order CANCEL command through bus")
             let! cancelResult = commandBus.Send cancelOrderCommand

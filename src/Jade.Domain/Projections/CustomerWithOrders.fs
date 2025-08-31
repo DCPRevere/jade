@@ -4,12 +4,16 @@ open System
 open Marten.Events.Projections
 open Serilog
 
+type OrderStatus = 
+    | Created
+    | Cancelled
+
 [<CLIMutable>]
 type OrderSummary = {
     OrderId: Guid
-    Status: string
+    Status: OrderStatus
     TotalValue: decimal
-    PromoCode: string
+    PromoCode: string option
 }
 
 [<CLIMutable>]
@@ -18,7 +22,7 @@ type CustomerWithOrders = {
     CustomerId: Guid
     Name: string
     Email: string
-    Phone: string
+    Phone: string option
     Orders: OrderSummary list
 }
 
@@ -47,7 +51,7 @@ type CustomerWithOrdersProjection() as this =
             CustomerId = event.CustomerId
             Name = event.Name
             Email = event.Email
-            Phone = ""
+            Phone = None
             Orders = []
         }
 
@@ -81,9 +85,9 @@ type CustomerWithOrdersProjection() as this =
         Log.Information("🔄 PROJECTION: Adding Order.Created.V1 to CustomerWithOrders: {OrderId} for {CustomerId}", event.OrderId, event.CustomerId)
         let orderSummary = {
             OrderId = event.OrderId
-            Status = "Created"
+            Status = Created
             TotalValue = event.Items |> List.sumBy (fun i -> i.Price * decimal i.Quantity)
-            PromoCode = ""
+            PromoCode = None
         }
         { current with Orders = orderSummary :: current.Orders }
 
@@ -91,7 +95,7 @@ type CustomerWithOrdersProjection() as this =
         Log.Information("🔄 PROJECTION: Adding Order.Created.V2 to CustomerWithOrders: {OrderId} for {CustomerId}", event.OrderId, event.CustomerId)
         let orderSummary = {
             OrderId = event.OrderId
-            Status = "Created"
+            Status = Created
             TotalValue = event.Items |> List.sumBy (fun i -> i.Price * decimal i.Quantity)
             PromoCode = event.PromoCode
         }
@@ -103,7 +107,7 @@ type CustomerWithOrdersProjection() as this =
             current.Orders 
             |> List.map (fun order -> 
                 if order.OrderId = event.OrderId then
-                    { order with Status = "Cancelled" }
+                    { order with Status = Cancelled }
                 else
                     order)
         { current with Orders = updatedOrders }

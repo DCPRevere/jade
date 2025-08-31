@@ -6,6 +6,9 @@ open Serilog
 /// Base interface for all domain events
 type IEvent = interface end
 
+/// Base interface for all domain commands  
+type ICommand = interface end
+
 /// Unique identifier for an aggregate
 type AggregateId = Guid
 

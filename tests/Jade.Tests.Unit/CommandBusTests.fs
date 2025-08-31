@@ -15,9 +15,10 @@ type TestCommandHandler(expectedCommand: TestCommand, result: Result<unit, strin
     
     member this.ReceivedCommand = receivedCommand
     
-    interface ICommandHandler<TestCommand> with
+    interface IDomainCommandHandler with
+        member this.CommandTypes = [ typeof<TestCommand> ]
         member this.Handle command = async {
-            receivedCommand <- Some command
+            receivedCommand <- Some (command :?> TestCommand)
             return result
         }
 
@@ -42,7 +43,7 @@ let commandBusTests =
             let command = { Id = Guid.NewGuid(); Message = "test message" }
             let handler = TestCommandHandler(command, Ok ())
             
-            bus.RegisterHandler handler
+            bus.RegisterDomainHandler handler
             let! result = bus.Send command
             
             Expect.isOk result "Should succeed when handler is registered"
@@ -55,7 +56,7 @@ let commandBusTests =
             let expectedError = "Handler error"
             let handler = TestCommandHandler(command, Error expectedError)
             
-            bus.RegisterHandler handler
+            bus.RegisterDomainHandler handler
             let! result = bus.Send command
             
             Expect.isError result "Should return error when handler fails"

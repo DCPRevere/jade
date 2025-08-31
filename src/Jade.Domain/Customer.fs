@@ -3,6 +3,10 @@ module Customer
 open System
 open Jade.Core.EventSourcing
 
+// Domain-specific command interface
+type ICustomerCommand = 
+    inherit ICommand
+
 module Command =
     module Create =
         type V1 = {
@@ -10,6 +14,7 @@ module Command =
             Name: string
             Email: string
         } with
+            interface ICustomerCommand
             static member toSchema =
                 $"urn:schema:jade:command:customer:create:1"
 
@@ -17,8 +22,9 @@ module Command =
             CustomerId: Guid
             Name: string
             Email: string
-            Phone: string
+            Phone: string option
         } with
+            interface ICustomerCommand
             static member toSchema =
                 $"urn:schema:jade:command:customer:create:2"
 
@@ -28,6 +34,7 @@ module Command =
             Name: string
             Email: string
         } with
+            interface ICustomerCommand
             static member toSchema =
                 $"urn:schema:jade:command:customer:update:1"
 
@@ -41,9 +48,8 @@ type UpdateV1 = Command.Update.V1
 type UpdateCustomer =
     | V1 of UpdateV1
 
-type Command =
-    | Create of CreateCustomer
-    | Update of UpdateCustomer
+// Use domain-specific interface as the command type
+type Command = ICustomerCommand
 
 // Events implementing IEvent interface
 module Event =
@@ -61,7 +67,7 @@ module Event =
             CustomerId: Guid
             Name: string
             Email: string
-            Phone: string
+            Phone: string option
         } with
             interface IEvent
             static member toSchema =
@@ -93,47 +99,42 @@ type State = {
 }
 
 // Clean domain functions using pattern matching
-let create command : Result<IEvent list, string> =
+let create (command: ICommand) : Result<IEvent list, string> =
     match command with
-    | Create version -> 
-        match version with
-        | CreateCustomer.V1 cmd -> 
-            Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email } : Event.Created.V1) :> IEvent ]
-        | CreateCustomer.V2 cmd -> 
-            Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = cmd.Phone } : Event.Created.V2) :> IEvent ]
-    | Update _ -> Error "Update command cannot be used for creation"
+    | :? Command.Create.V1 as cmd -> 
+        // V1 commands now produce V2 events with Phone = None for forward compatibility
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = None } : Event.Created.V2) :> IEvent ]
+    | :? Command.Create.V2 as cmd -> 
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = cmd.Phone } : Event.Created.V2) :> IEvent ]
+    | _ -> Error "Update command cannot be used for creation"
 
-let decide command state : Result<IEvent list, string> =
+let decide (command: ICommand) state : Result<IEvent list, string> =
     match command with
-    | Create _ -> Error "Create command cannot be used on existing aggregate"
-    | Update version -> 
-        match version with
-        | UpdateCustomer.V1 cmd -> 
-            Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email } : Event.Updated.V1) :> IEvent ]
+    | :? Command.Create.V1 | :? Command.Create.V2 -> Error "Create command cannot be used on existing aggregate"
+    | :? Command.Update.V1 as cmd -> 
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email } : Event.Updated.V1) :> IEvent ]
+    | _ -> Error "Unknown command type"
 
 let init (event: IEvent) : State =
     match event with
     | :? Event.Created.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = None }
-    | :? Event.Created.V2 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = Some e.Phone }
+    | :? Event.Created.V2 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = e.Phone }
     | :? Event.Updated.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = None }
     | _ -> failwithf "Unknown event type: %A" event
 
 let evolve state (event: IEvent) : State =
     match event with
     | :? Event.Created.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = None }
-    | :? Event.Created.V2 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = Some e.Phone }
+    | :? Event.Created.V2 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = e.Phone }
     | :? Event.Updated.V1 as e -> { state with Name = e.Name; Email = e.Email }
     | _ -> failwithf "Unknown event type: %A" event
 
-let getId command : Guid =
+let getId (command: ICommand) : Guid =
     match command with
-    | Create version -> 
-        match version with
-        | CreateCustomer.V1 cmd -> cmd.CustomerId
-        | CreateCustomer.V2 cmd -> cmd.CustomerId
-    | Update version -> 
-        match version with
-        | UpdateCustomer.V1 cmd -> cmd.CustomerId
+    | :? Command.Create.V1 as cmd -> cmd.CustomerId
+    | :? Command.Create.V2 as cmd -> cmd.CustomerId
+    | :? Command.Update.V1 as cmd -> cmd.CustomerId
+    | _ -> failwithf "Unknown command type: %A" command
 
 let aggregate = {
     create = create
@@ -141,3 +142,19 @@ let aggregate = {
     init = init
     evolve = evolve
 }
+
+// Command handler with knowledge of which command types it handles
+type CustomerCommandHandler(repository: IAggregateRepository<State, IEvent>) =
+    let handler = AggregateCommandHandler(repository, aggregate, getId, "👤 CUSTOMER")
+    
+    // Map of command types this handler can process
+    let commandTypes = [
+        typeof<Command.Create.V1>
+        typeof<Command.Create.V2>
+        typeof<Command.Update.V1>
+    ]
+    
+    interface Jade.Core.CommandBus.IDomainCommandHandler with
+        member _.CommandTypes = commandTypes
+        member _.Handle command = 
+            (handler :> ICommandHandler<ICommand>).Handle (command :?> ICommand)
