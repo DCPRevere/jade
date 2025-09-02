@@ -8,6 +8,9 @@
   <ItemGroup>
     <Compile Include="EventSourcing.fs" />
     <Compile Include="CommandBus.fs" />
+    <Compile Include="CommandRegistry.fs" />
+    <Compile Include="CloudEvents.fs" />
+    <Compile Include="PostgreSqlContainer.fs" />
     <Compile Include="MartenConfiguration.fs" />
     <Compile Include="MartenRepository.fs" />
   </ItemGroup>
@@ -15,9 +18,11 @@
   <ItemGroup>
     <PackageReference Include="FSharp.SystemTextJson" Version="1.4.36" />
     <PackageReference Include="Marten" Version="8.9.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <PackageReference Include="Npgsql" Version="9.0.2" />
     <PackageReference Include="Serilog" Version="4.3.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
   </ItemGroup>
 
 </Project>

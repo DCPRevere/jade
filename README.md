@@ -2,102 +2,129 @@
 
 Jade is a functional event sourcing library for F# that provides a clean, type-safe foundation for building event-sourced applications using domain-driven design principles.
 
-## Features
+## Examples
 
-- **Idiomatic F# Aggregates**: Record-of-functions pattern for aggregate behavior
-- **Event Metadata & Versioning**: Correlation tracking and schema evolution support
-- **Snapshots**: Performance optimization for large event streams
-- **Projections**: Read model generation from event streams
-- **Sagas/Process Managers**: Long-running business process orchestration
-- **Validation Framework**: Composable validation with error aggregation
-- **Domain Events**: Publish domain events for external integration
-- **Command Bus**: Decoupled command handling with pluggable handlers
-- **Marten Integration**: Persistent event storage using PostgreSQL
+Jade includes two complete examples demonstrating the full event sourcing flow:
+
+### Console Application
+
+The console example demonstrates the complete command bus flow from command creation through event storage and projection updates. It shows:
+
+Customer and Order aggregate operations
+Command processing through the bus
+Event persistence to PostgreSQL via Marten
+Projection building and querying
+
+Run with: dotnet run --project src/Jade.Example.Console
+
+### API Application
+
+The API provides a CloudEvents-compliant REST endpoint for processing commands. Features include:
+
+CloudEvents v1.0 specification compliance
+Schema-based command deserialization
+Command routing through the bus
+Query endpoint for projections
+Automatic PostgreSQL container management in development
+
+Run with: dotnet run --project src/Jade.Example.Api
 
 ## Usage
 
-### Define Your Aggregate
+To use Jade in your project, follow these steps:
+
+Define your domain commands and events:
 
 ```fsharp
-type CustomerCommand = Create of CreateCustomer | Update of UpdateCustomer
-type CustomerEvent = Created of CustomerCreated | Updated of CustomerUpdated
-type CustomerState = { Id: Guid; Name: string; Email: string }
+module Customer
 
-let customerAggregate = {
-    create = fun cmd -> 
-        match cmd with
-        | Create data -> Ok [Created { Id = data.Id; Name = data.Name; Email = data.Email }]
-        | _ -> Error "Invalid create command"
-    
-    decide = fun cmd state ->
-        match cmd with 
-        | Update data -> Ok [Updated { Id = state.Id; Name = data.Name; Email = data.Email }]
-        | _ -> Error "Invalid command"
-    
-    evolve = fun state event ->
-        match event with
-        | Created data -> { Id = data.Id; Name = data.Name; Email = data.Email }
-        | Updated data -> { state with Name = data.Name; Email = data.Email }
-    
-    init = { Id = Guid.Empty; Name = ""; Email = "" }
+module Command =
+    module Create =
+        type V1 = {
+            CustomerId: Guid
+            Name: string
+            Email: string
+        } with
+            interface ICommand
+            static member toSchema = "urn:schema:jade:command:customer:create:1"
+
+module Event =
+    module Created =
+        type V1 = {
+            CustomerId: Guid
+            Name: string
+            Email: string
+        } with
+            interface IEvent
+            static member toSchema = "urn:schema:jade:event:customer:created:1"
+
+type State = {
+    Id: Guid
+    Name: string
+    Email: string
 }
 ```
 
-### Process Commands
+Implement the aggregate pattern:
 
 ```fsharp
-let repository = createMartenRepository documentStore
-let! result = processCommand repository customerAggregate getId command
-```
+let create (command: ICommand) : Result<IEvent list, string> =
+    match command with
+    | :? Command.Create.V1 as cmd -> 
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email } : Event.Created.V1) :> IEvent ]
+    | _ -> Error "Invalid command for creation"
 
-### Validation
+let decide (command: ICommand) state : Result<IEvent list, string> =
+    // Handle commands on existing state
+    Error "No update commands defined"
 
-```fsharp
-let validateCustomer customer = validation {
-    let! name = Validation.notNullOrEmpty "name" customer.Name
-    let! email = Validation.email "email" customer.Email
-    return { customer with Name = name; Email = email }
+let init (event: IEvent) : State =
+    match event with
+    | :? Event.Created.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email }
+    | _ -> failwithf "Unknown event type: %A" event
+
+let evolve state (event: IEvent) : State =
+    match event with
+    | :? Event.Created.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email }
+    | _ -> state
+
+let aggregate = {
+    prefix = "customer"
+    create = create
+    decide = decide
+    init = init
+    evolve = evolve
 }
 ```
 
-### Snapshots
+Set up Marten and register handlers:
 
 ```fsharp
-let strategy = EveryNEvents 100
-let snapshot = createSnapshot aggregateId state version
+open Jade.Core.MartenConfiguration
+open Jade.Core.MartenRepository
+open Jade.Core.CommandBus
+open Jade.Core.CommandRegistry
+
+// Configure Marten with string stream identifiers
+let store = DocumentStore.For(fun options ->
+    options.Connection(connectionString)
+    configureMartenBase options
+    options.Events.MapEventType<Customer.Event.Created.V1> "urn:schema:jade:event:customer:created:1"
+)
+
+// Create repository and handler
+let repository = createRepository store Customer.aggregate
+let handler = createHandler repository Customer.aggregate Customer.getId
+
+// Register with command bus
+let registry = Registry()
+registry.register([typeof<Customer.Command.Create.V1>], handler)
+let commandBus = CommandBus(registry.GetHandler)
 ```
 
-### Projections
+Process commands:
 
 ```fsharp
-type CustomerProjectionHandler() =
-    interface IProjectionHandler<CustomerEvent, CustomerReadModel> with
-        member _.CanHandle event = match event with Created _ | Updated _ -> true
-        member _.Handle eventWithMetadata readModel = async {
-            // Update read model based on event
-            return updatedReadModel
-        }
-```
-
-## Testing
-
-Run the comprehensive test suite (25+ tests):
-
-```bash
-cd tests/Jade.Tests.Unit && dotnet run
-cd tests/Jade.Tests.Integration && dotnet run
-```
-
-Tests cover validation, event metadata, aggregates, snapshots, projections, sagas, command bus, and Marten integration with PostgreSQL via Testcontainers.
-
-## Getting Started
-
-For a complete walkthrough of building your own event-sourced application, see [GETTING_STARTED.md](GETTING_STARTED.md) which shows how to build a banking application from scratch using Jade.
-
-## Example Application
-
-See `src/Jade.Example.Console` for a complete working example demonstrating the full event sourcing flow with PostgreSQL persistence.
-
-```bash
-cd src/Jade.Example.Console && dotnet run
+let command = { CustomerId = Guid.NewGuid(); Name = "John"; Email = "john@example.com" }
+let! result = commandBus.Send command
 ```

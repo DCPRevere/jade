@@ -1,0 +1,146 @@
+### Get registered schemas
+GET http://localhost:5000/api/cloudevents/schemas
+Accept: application/json
+
+### Create a Customer (V1)
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-001",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.customer.create",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:schema:jade:command:customer:create:1",
+  "time": "2024-01-01T12:00:00Z",
+  "data": {
+    "customerId": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Alice Smith",
+    "email": "alice@example.com"
+  }
+}
+
+### Create a Customer (V2 with phone)
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-002",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.customer.create",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:schema:jade:command:customer:create:2",
+  "time": "2024-01-01T12:00:00Z",
+  "data": {
+    "customerId": "550e8400-e29b-41d4-a716-446655440002",
+    "name": "Bob Johnson",
+    "email": "bob@example.com",
+    "phone": "+1-555-0123"
+  }
+}
+
+### Update a Customer
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-003",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.customer.update",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:schema:jade:command:customer:update:1",
+  "time": "2024-01-01T12:00:00Z",
+  "data": {
+    "customerId": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Alice Smith-Johnson",
+    "email": "alice.johnson@example.com"
+  }
+}
+
+### Create an Order (V2 with promo)
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-004",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.order.create",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:schema:jade:command:order:create:2",
+  "time": "2024-01-01T12:00:00Z",
+  "data": {
+    "orderId": "660e8400-e29b-41d4-a716-446655440003",
+    "customerId": "550e8400-e29b-41d4-a716-446655440001",
+    "items": [
+      {
+        "productId": "770e8400-e29b-41d4-a716-446655440004",
+        "quantity": 2,
+        "price": 29.99
+      },
+      {
+        "productId": "880e8400-e29b-41d4-a716-446655440005",
+        "quantity": 1,
+        "price": 49.99
+      }
+    ],
+    "promoCode": "SAVE10"
+  }
+}
+
+### Cancel an Order
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-005",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.order.cancel",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:schema:jade:command:order:cancel:1",
+  "time": "2024-01-01T12:00:00Z",
+  "data": {
+    "orderId": "660e8400-e29b-41d4-a716-446655440003",
+    "customerId": "550e8400-e29b-41d4-a716-446655440001"
+  }
+}
+
+### Invalid CloudEvent (missing required field)
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.customer.create",
+  "data": {
+    "customerId": "990e8400-e29b-41d4-a716-446655440006",
+    "name": "Invalid User"
+  }
+}
+
+### Unknown schema
+POST http://localhost:5000/api/cloudevents
+Content-Type: application/cloudevents+json
+Accept: application/json
+
+{
+  "id": "ce-007",
+  "source": "http://example.com/client",
+  "specversion": "1.0",
+  "type": "com.jade.command.unknown",
+  "dataschema": "urn:schema:jade:command:unknown:1",
+  "data": {
+    "someField": "someValue"
+  }
+}

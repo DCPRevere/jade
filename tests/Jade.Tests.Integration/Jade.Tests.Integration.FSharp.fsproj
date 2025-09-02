@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jade.Core\Jade.Core.fsproj" />
-    <ProjectReference Include="..\..\src\Jade.Domain\Jade.Domain.fsproj" />
+    <ProjectReference Include="..\..\src\Jade.Example.Domain\Jade.Example.Domain.fsproj" />
   </ItemGroup>
 
 </Project>

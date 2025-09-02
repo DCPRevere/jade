@@ -3,12 +3,13 @@ open Marten
 open Testcontainers.PostgreSql
 open Serilog
 open Jade.Core.CommandBus
+open Jade.Core.CommandRegistry
 open Jade.Core.EventSourcing
 open Jade.Core.MartenRepository
 module C = Customer
 module O = Order
-open Jade.Domain.MartenConfiguration
-open Jade.Domain.Projections.CustomerWithOrders
+open Jade.Example.Domain.MartenConfiguration
+open Jade.Example.Domain.Projections.CustomerView
 
 // Configure Serilog
 Log.Logger <- LoggerConfiguration()
@@ -58,22 +59,32 @@ let demonstrateCompleteFlow () = async {
         do! documentStore.Advanced.Clean.CompletelyRemoveAllAsync() |> Async.AwaitTask
         Log.Information("✅ Marten configured and database initialized")
         
-        // Set up command bus with multiple handlers
-        Log.Information("🚌 Setting up command bus with multiple handlers...")
-        let commandBus = CommandBus()
+        // Set up command registry and bus
+        Log.Information("🚌 Setting up command registry and bus...")
         
-        // Register Customer handler
-        let customerRepository = createRepository<C.Command, Jade.Core.EventSourcing.IEvent, C.State> documentStore C.aggregate
-        let customerHandler = C.CustomerCommandHandler(customerRepository)
-        commandBus.RegisterDomainHandler customerHandler
+        let registry = Registry()
+        
+        // Register Customer handler with commands
+        let customerRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, C.State> documentStore C.aggregate
+        let customerHandler = createHandler customerRepository C.aggregate C.getId
+        registry.register([
+            typeof<C.Command.Create.V1>
+            typeof<C.Command.Create.V2>
+            typeof<C.Command.Update.V1>
+        ], customerHandler)
         Log.Information("✅ Registered CUSTOMER command handler")
         
-        // Register Order handler
-        let orderRepository = createRepository<O.Command, Jade.Core.EventSourcing.IEvent, O.State> documentStore O.aggregate
-        let orderHandler = O.OrderCommandHandler(orderRepository)
-        commandBus.RegisterDomainHandler orderHandler
+        // Register Order handler with commands
+        let orderRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, O.State> documentStore O.aggregate
+        let orderHandler = createHandler orderRepository O.aggregate O.getId
+        registry.register([
+            typeof<O.Command.Create.V1>
+            typeof<O.Command.Create.V2>
+            typeof<O.Command.Cancel.V1>
+        ], orderHandler)
         Log.Information("✅ Registered ORDER command handler")
         
+        let commandBus = CommandBus(registry.GetHandler)
         Log.Information("✅ Command bus configured with 2 handlers")
         
         // Create and send commands
@@ -133,8 +144,9 @@ let demonstrateCompleteFlow () = async {
                         Log.Information("")
                         Log.Information("🗃️ Verifying events in PostgreSQL database...")
                         use session = documentStore.LightweightSession()
-                        let! streamEvents = session.Events.FetchStreamAsync(customerId) |> Async.AwaitTask
-                        Log.Information("✅ Found {EventCount} events in stream:", streamEvents.Count)
+                        let customerStreamId = $"customer-{customerId}"
+                        let! streamEvents = session.Events.FetchStreamAsync(customerStreamId) |> Async.AwaitTask
+                        Log.Information("✅ Found {EventCount} events in stream {StreamId}:", streamEvents.Count, customerStreamId)
                         streamEvents |> Seq.iteri (fun i event ->
                             Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
                         )
@@ -191,8 +203,9 @@ let demonstrateCompleteFlow () = async {
                 Log.Information("")
                 Log.Information("🗃️ Verifying Order events in PostgreSQL database...")
                 use session = documentStore.LightweightSession()
-                let! orderStreamEvents = session.Events.FetchStreamAsync(orderId) |> Async.AwaitTask
-                Log.Information("✅ Found {EventCount} Order events in stream:", orderStreamEvents.Count)
+                let orderStreamId = $"order-{orderId}"
+                let! orderStreamEvents = session.Events.FetchStreamAsync(orderStreamId) |> Async.AwaitTask
+                Log.Information("✅ Found {EventCount} Order events in stream {StreamId}:", orderStreamEvents.Count, orderStreamId)
                 orderStreamEvents |> Seq.iteri (fun i event ->
                     Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
                 )
@@ -227,8 +240,9 @@ let demonstrateCompleteFlow () = async {
                     Log.Information("")
                     Log.Information("🗃️ Verifying all Order events in PostgreSQL database...")
                     use session = documentStore.LightweightSession()
-                    let! finalOrderStreamEvents = session.Events.FetchStreamAsync(orderId) |> Async.AwaitTask
-                    Log.Information("✅ Found {EventCount} Order events in stream:", finalOrderStreamEvents.Count)
+                    let orderStreamId = $"order-{orderId}"
+                    let! finalOrderStreamEvents = session.Events.FetchStreamAsync(orderStreamId) |> Async.AwaitTask
+                    Log.Information("✅ Found {EventCount} Order events in stream {StreamId}:", finalOrderStreamEvents.Count, orderStreamId)
                     finalOrderStreamEvents |> Seq.iteri (fun i event ->
                         Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
                     )
@@ -250,20 +264,20 @@ let demonstrateCompleteFlow () = async {
         // Event projection should already be built because it is inline
         
         // Query the projection
-        Log.Information("🔄 Querying CustomerWithOrders projection for customer {CustomerId}...", customerId)
+        Log.Information("🔄 Querying CustomerView projection for customer {CustomerId}...", customerId)
         use session = documentStore.QuerySession()
-        let! projection = session.LoadAsync<CustomerWithOrders>(customerId) |> Async.AwaitTask
+        let! projection = session.LoadAsync<CustomerView>(customerId) |> Async.AwaitTask
         
         match box projection with
         | null ->
-            Log.Warning("⚠️ CustomerWithOrders projection not found for customer {CustomerId}", customerId)
+            Log.Warning("⚠️ CustomerView projection not found for customer {CustomerId}", customerId)
             
-            let! allProjections = session.Query<CustomerWithOrders>().ToListAsync() |> Async.AwaitTask
-            Log.Information("📋 Found {Count} CustomerWithOrders documents total", allProjections.Count)
+            let! allProjections = session.Query<CustomerView>().ToListAsync() |> Async.AwaitTask
+            Log.Information("📋 Found {Count} CustomerView documents total", allProjections.Count)
             
         | _ ->
-            Log.Information("✅ CustomerWithOrders projection found and built successfully:")
-            Log.Information("   CustomerWithOrders: {cw}", projection)
+            Log.Information("✅ CustomerView projection found and built successfully:")
+            Log.Information("   CustomerView: {cw}", projection)
         
         documentStore.Dispose()
         do! postgresContainer.DisposeAsync().AsTask() |> Async.AwaitTask

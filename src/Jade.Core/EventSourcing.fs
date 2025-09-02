@@ -20,7 +20,7 @@ type CommandResult<'Event> = {
 }
 
 /// Repository for loading and saving aggregates
-type IAggregateRepository<'State, 'Event when 'Event :> IEvent> =
+type IRepository<'State, 'Event when 'Event :> IEvent> =
     abstract member GetById: AggregateId -> Async<Result<'State * int64, string>>
     abstract member Save: AggregateId -> 'Event list -> int64 -> Async<Result<unit, string>>
 
@@ -30,6 +30,9 @@ type ICommandHandler<'Command> =
 
 /// Idiomatic F# aggregate pattern using record of functions
 type Aggregate<'Command, 'Event, 'State when 'Event :> IEvent> = {
+    /// Stream prefix to distinguish aggregate types (e.g., "customer", "order")
+    prefix: string
+    
     /// Create a new aggregate from a command (when aggregate doesn't exist)
     create: 'Command -> Result<'Event list, string>
     
@@ -53,7 +56,7 @@ let rehydrate<'Command, 'Event, 'State when 'Event :> IEvent> (aggregate: Aggreg
 
 /// Helper to process commands using aggregate pattern
 let processCommand<'Command, 'Event, 'State when 'Event :> IEvent> 
-    (repository: IAggregateRepository<'State, 'Event>)
+    (repository: IRepository<'State, 'Event>)
     (aggregate: Aggregate<'Command, 'Event, 'State>)
     (getId: 'Command -> AggregateId)
     (command: 'Command) = async {
@@ -84,20 +87,20 @@ let processCommand<'Command, 'Event, 'State when 'Event :> IEvent>
 }
 
 /// Generic aggregate command handler
-type AggregateCommandHandler<'Command, 'Event, 'State when 'Event :> IEvent>
-    (repository: IAggregateRepository<'State, 'Event>, 
+type AggregateHandler<'Command, 'Event, 'State when 'Event :> IEvent>
+    (repository: IRepository<'State, 'Event>, 
      aggregate: Aggregate<'Command, 'Event, 'State>,
-     getId: 'Command -> AggregateId,
-     handlerName: string) =
+     getId: 'Command -> AggregateId) =
     
     interface ICommandHandler<'Command> with
         member this.Handle command = async {
-            Log.Information("{HandlerName} Handler received command: {Command}", handlerName, command)
+            Log.Information("Handler received command: {Command}", command)
             let! result = processCommand repository aggregate getId command
             
             match result with
-            | Ok () -> Log.Information("{HandlerName} Handler processed command successfully", handlerName)
-            | Error err -> Log.Error("{HandlerName} Handler failed: {ErrorMessage}", handlerName, err)
+            | Ok () -> Log.Information("Handler processed command successfully")
+            | Error err -> Log.Error("Handler failed: {ErrorMessage}", err)
             
             return result
         }
+

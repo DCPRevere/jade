@@ -34,6 +34,7 @@ type TestCommand =
     | Update of TestUpdated
 
 let testAggregate : Aggregate<TestCommand, IEvent, TestState> = {
+    prefix = "test"
     create = fun cmd ->
         match cmd with
         | Create e -> Ok [e :> IEvent]
@@ -77,7 +78,7 @@ let martenRepositoryTests =
         testCaseAsync "GetById returns error when aggregate doesn't exist" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenAggregateRepository(store, testAggregate) :> IAggregateRepository<TestState, IEvent>
+                let repository = MartenRepository(store, testAggregate) :> IRepository<TestState, IEvent>
                 let aggregateId = Guid.NewGuid()
                 
                 let! result = repository.GetById aggregateId
@@ -94,7 +95,7 @@ let martenRepositoryTests =
         testCaseAsync "Save new aggregate (version 0) creates stream" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenAggregateRepository(store, testAggregate) :> IAggregateRepository<TestState, IEvent>
+                let repository = MartenRepository(store, testAggregate) :> IRepository<TestState, IEvent>
                 let aggregateId = Guid.NewGuid()
                 let events : IEvent list = [ { Id = aggregateId; Name = "Test Name" } :> IEvent ]
                 

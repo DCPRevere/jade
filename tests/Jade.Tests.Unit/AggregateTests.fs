@@ -17,9 +17,10 @@ type TestState = {
 }
 
 let testAggregate : Aggregate<TestCommand, IEvent, TestState> = {
+    prefix = "test"
     create = fun cmd ->
         match cmd with
-        | Create value -> Ok [{ Value = value } :> IEvent]
+        | Create value -> Ok [({ TestCreated.Value = value } : TestCreated) :> IEvent]
         | _ -> Error "Invalid create command"
     
     decide = fun cmd state ->

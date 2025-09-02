@@ -15,8 +15,7 @@ type TestCommandHandler(expectedCommand: TestCommand, result: Result<unit, strin
     
     member this.ReceivedCommand = receivedCommand
     
-    interface IDomainCommandHandler with
-        member this.CommandTypes = [ typeof<TestCommand> ]
+    interface IHandler with
         member this.Handle command = async {
             receivedCommand <- Some (command :?> TestCommand)
             return result
@@ -27,7 +26,8 @@ let commandBusTests =
     testList "CommandBus Tests" [
         
         testCaseAsync "Send command without registered handler returns error" <| async {
-            let bus = CommandBus()
+            let getHandler (_: Type) = None
+            let bus = CommandBus(getHandler)
             let command = { Id = Guid.NewGuid(); Message = "test" }
             
             let! result = bus.Send command
@@ -39,11 +39,12 @@ let commandBusTests =
         }
         
         testCaseAsync "Send command with registered handler calls handler" <| async {
-            let bus = CommandBus()
             let command = { Id = Guid.NewGuid(); Message = "test message" }
             let handler = TestCommandHandler(command, Ok ())
+            let getHandler (commandType: Type) = 
+                if commandType = typeof<TestCommand> then Some (handler :> IHandler) else None
+            let bus = CommandBus(getHandler)
             
-            bus.RegisterDomainHandler handler
             let! result = bus.Send command
             
             Expect.isOk result "Should succeed when handler is registered"
@@ -51,12 +52,13 @@ let commandBusTests =
         }
         
         testCaseAsync "Send command with handler that returns error" <| async {
-            let bus = CommandBus()
             let command = { Id = Guid.NewGuid(); Message = "test" }
             let expectedError = "Handler error"
             let handler = TestCommandHandler(command, Error expectedError)
+            let getHandler (commandType: Type) = 
+                if commandType = typeof<TestCommand> then Some (handler :> IHandler) else None
+            let bus = CommandBus(getHandler)
             
-            bus.RegisterDomainHandler handler
             let! result = bus.Send command
             
             Expect.isError result "Should return error when handler fails"
