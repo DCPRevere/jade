@@ -1,4 +1,4 @@
-module Jade.Core.PostgreSqlContainer
+module Jade.Marten.PostgreSqlContainer
 
 open System
 open Microsoft.Extensions.Logging

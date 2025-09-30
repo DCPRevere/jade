@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AssemblyName>Jade.Domain</AssemblyName>
     <RootNamespace>Jade.Domain</RootNamespace>
@@ -16,6 +16,7 @@
   
   <ItemGroup>
     <ProjectReference Include="..\Jade.Core\Jade.Core.fsproj" />
+    <ProjectReference Include="..\Jade.Marten\Jade.Marten.fsproj" />
   </ItemGroup>
 
 </Project>

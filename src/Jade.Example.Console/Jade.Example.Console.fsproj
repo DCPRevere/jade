@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,14 +11,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Jade.Core\Jade.Core.fsproj" />
+    <ProjectReference Include="..\Jade.Marten\Jade.Marten.fsproj" />
     <ProjectReference Include="..\Jade.Example.Domain\Jade.Example.Domain.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Marten" Version="8.9.0" />
-    <PackageReference Include="Serilog" Version="4.3.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
   </ItemGroup>
 
 </Project>

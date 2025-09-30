@@ -3,6 +3,8 @@ module CommandBusTests
 open Expecto
 open Jade.Core.CommandBus
 open Jade.Core.EventSourcing
+open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Logging.Abstractions
 open System
 
 type TestCommand = {
@@ -27,7 +29,8 @@ let commandBusTests =
         
         testCaseAsync "Send command without registered handler returns error" <| async {
             let getHandler (_: Type) = None
-            let bus = CommandBus(getHandler)
+            let logger = NullLogger<CommandBus>.Instance
+            let bus = CommandBus(getHandler, logger)
             let command = { Id = Guid.NewGuid(); Message = "test" }
             
             let! result = bus.Send command
@@ -43,7 +46,8 @@ let commandBusTests =
             let handler = TestCommandHandler(command, Ok ())
             let getHandler (commandType: Type) = 
                 if commandType = typeof<TestCommand> then Some (handler :> IHandler) else None
-            let bus = CommandBus(getHandler)
+            let logger = NullLogger<CommandBus>.Instance
+            let bus = CommandBus(getHandler, logger)
             
             let! result = bus.Send command
             
@@ -57,7 +61,8 @@ let commandBusTests =
             let handler = TestCommandHandler(command, Error expectedError)
             let getHandler (commandType: Type) = 
                 if commandType = typeof<TestCommand> then Some (handler :> IHandler) else None
-            let bus = CommandBus(getHandler)
+            let logger = NullLogger<CommandBus>.Instance
+            let bus = CommandBus(getHandler, logger)
             
             let! result = bus.Send command
             

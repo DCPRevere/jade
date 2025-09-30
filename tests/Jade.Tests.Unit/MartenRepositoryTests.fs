@@ -1,8 +1,8 @@
 module MartenRepositoryTests
 
 open Expecto
-open Jade.Core.MartenRepository
-open Jade.Core.MartenConfiguration
+open Jade.Marten.MartenRepository
+open Jade.Marten.MartenConfiguration
 open Jade.Core.EventSourcing
 open Marten
 open System
@@ -78,8 +78,9 @@ let martenRepositoryTests =
         testCaseAsync "GetById returns error when aggregate doesn't exist" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenRepository(store, testAggregate) :> IRepository<TestState, IEvent>
-                let aggregateId = Guid.NewGuid()
+                let logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<MartenRepository<TestCommand, TestState, IEvent>>.Instance
+                let repository = MartenRepository(logger, store, testAggregate) :> IRepository<TestState, IEvent>
+                let aggregateId = Guid.NewGuid().ToString()
                 
                 let! result = repository.GetById aggregateId
                 
@@ -95,9 +96,10 @@ let martenRepositoryTests =
         testCaseAsync "Save new aggregate (version 0) creates stream" <| async {
             let! (store, container) = createTestStore()
             try
-                let repository = MartenRepository(store, testAggregate) :> IRepository<TestState, IEvent>
-                let aggregateId = Guid.NewGuid()
-                let events : IEvent list = [ { Id = aggregateId; Name = "Test Name" } :> IEvent ]
+                let logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<MartenRepository<TestCommand, TestState, IEvent>>.Instance
+                let repository = MartenRepository(logger, store, testAggregate) :> IRepository<TestState, IEvent>
+                let aggregateId = Guid.NewGuid().ToString()
+                let events : IEvent list = [ { Id = Guid.Parse(aggregateId); Name = "Test Name" } :> IEvent ]
                 
                 let! saveResult = repository.Save aggregateId events 0L
                 

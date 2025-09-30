@@ -1,4 +1,4 @@
-module Jade.Core.MartenConfiguration
+module Jade.Marten.MartenConfiguration
 
 open Marten
 open JasperFx.Events

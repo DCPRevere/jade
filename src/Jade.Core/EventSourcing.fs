@@ -1,7 +1,7 @@
 module Jade.Core.EventSourcing
 
 open System
-open Serilog
+open Microsoft.Extensions.Logging
 
 /// Base interface for all domain events
 type IEvent = interface end
@@ -10,7 +10,7 @@ type IEvent = interface end
 type ICommand = interface end
 
 /// Unique identifier for an aggregate
-type AggregateId = Guid
+type AggregateId = string
 
 /// Result of processing a command
 type CommandResult<'Event> = {
@@ -56,51 +56,74 @@ let rehydrate<'Command, 'Event, 'State when 'Event :> IEvent> (aggregate: Aggreg
 
 /// Helper to process commands using aggregate pattern
 let processCommand<'Command, 'Event, 'State when 'Event :> IEvent> 
+    (logger: ILogger)
     (repository: IRepository<'State, 'Event>)
     (aggregate: Aggregate<'Command, 'Event, 'State>)
     (getId: 'Command -> AggregateId)
     (command: 'Command) = async {
     
-    let aggregateId = getId command
-    let! existingResult = repository.GetById aggregateId
-    
-    match existingResult with
-    | Error _ ->
-        // Aggregate doesn't exist, try to create
-        match aggregate.create command with
-        | Ok events ->
-            let! saveResult = repository.Save aggregateId events 0L
-            match saveResult with
-            | Ok () -> return Ok ()
-            | Error err -> return Error ("Failed to save new aggregate: " + err)
-        | Error err -> return Error err
-        
-    | Ok (state, currentVersion) ->
-        // Aggregate exists, decide on existing state
-        match aggregate.decide command state with
-        | Ok events ->
-            let! saveResult = repository.Save aggregateId events currentVersion
-            match saveResult with
-            | Ok () -> return Ok ()
-            | Error err -> return Error ("Failed to save aggregate: " + err)
-        | Error err -> return Error err
+    logger.LogDebug("Processing command of type {CommandType}", command.GetType().FullName)
+    let aggregateId =
+        try
+            let id = getId command
+            logger.LogDebug("Extracted aggregate ID: {AggregateId}", id)
+            id
+        with ex ->
+            logger.LogError(ex, "Failed to extract aggregate ID from command")
+            ""
+
+    if System.String.IsNullOrEmpty(aggregateId) then
+        return Error "Failed to extract aggregate ID from command"
+    else
+        let! existingResult = repository.GetById aggregateId
+        logger.LogDebug("Repository GetById result - IsError: {IsError}", existingResult |> Result.isError)
+
+        match existingResult with
+        | Error _ ->
+            logger.LogDebug("Aggregate {AggregateId} doesn't exist, attempting to create", aggregateId)
+            // Aggregate doesn't exist, try to create
+            match aggregate.create command with
+            | Ok events ->
+                logger.LogDebug("Aggregate creation succeeded with {EventCount} events for {AggregateId}", events.Length, aggregateId)
+                for i, evt in events |> List.indexed do
+                    let evtType = if isNull (box evt) then "NULL" else evt.GetType().FullName
+                    logger.LogTrace("Event [{Index}] type: {EventType}", i, evtType)
+
+                logger.LogDebug("Saving new aggregate {AggregateId} at version 0", aggregateId)
+                let! saveResult = repository.Save aggregateId events 0L
+                logger.LogDebug("Repository save completed - IsOk: {IsOk}", saveResult |> Result.isOk)
+
+                match saveResult with
+                | Ok () ->
+                    logger.LogInformation("Successfully created aggregate {AggregateId}", aggregateId)
+                    return Ok ()
+                | Error err ->
+                    logger.LogError("Failed to save new aggregate {AggregateId}: {Error}", aggregateId, err)
+                    return Error ("Failed to save new aggregate: " + err)
+            | Error err ->
+                logger.LogError("Aggregate creation failed for {AggregateId}: {Error}", aggregateId, err)
+                return Error err
+
+        | Ok (state, currentVersion) ->
+            // Aggregate exists, decide on existing state
+            match aggregate.decide command state with
+            | Ok events ->
+                let! saveResult = repository.Save aggregateId events currentVersion
+                match saveResult with
+                | Ok () -> return Ok ()
+                | Error err -> return Error ("Failed to save aggregate: " + err)
+            | Error err -> return Error err
 }
 
 /// Generic aggregate command handler
 type AggregateHandler<'Command, 'Event, 'State when 'Event :> IEvent>
-    (repository: IRepository<'State, 'Event>, 
+    (logger: ILogger,
+     repository: IRepository<'State, 'Event>, 
      aggregate: Aggregate<'Command, 'Event, 'State>,
      getId: 'Command -> AggregateId) =
     
     interface ICommandHandler<'Command> with
         member this.Handle command = async {
-            Log.Information("Handler received command: {Command}", command)
-            let! result = processCommand repository aggregate getId command
-            
-            match result with
-            | Ok () -> Log.Information("Handler processed command successfully")
-            | Error err -> Log.Error("Handler failed: {ErrorMessage}", err)
-            
-            return result
+            return! processCommand logger repository aggregate getId command
         }
 

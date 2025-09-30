@@ -3,7 +3,7 @@ module Jade.Example.Domain.MartenConfiguration
 open Marten
 open Marten.Events.Projections
 open JasperFx.Events.Projections
-open Jade.Core.MartenConfiguration
+open Jade.Marten.MartenConfiguration
 open Jade.Example.Domain.Projections.CustomerView
 
 let configureDomainMarten (options: StoreOptions) =

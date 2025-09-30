@@ -99,28 +99,34 @@ let decide (command: ICommand) state : Result<IEvent list, string> =
 
 let init (event: IEvent) : State =
     match event with
-    | :? Event.Created.V1 as e -> 
+    | :? Event.Created.V1 as e ->
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = None }
-    | :? Event.Created.V2 as e -> 
+    | :? Event.Created.V2 as e ->
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = e.PromoCode }
-    | _ -> failwithf "Unknown event type: %A" event
+    | _ ->
+        eprintfn "Unknown event type: %s" (event.GetType().Name)
+        { Id = Guid.Empty; CustomerId = Guid.Empty; Items = []; Status = OrderStatus.Created; PromoCode = None }
 
 let evolve state (event: IEvent) : State =
     match event with
-    | :? Event.Created.V1 as e -> 
+    | :? Event.Created.V1 as e ->
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = None }
-    | :? Event.Created.V2 as e -> 
+    | :? Event.Created.V2 as e ->
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = e.PromoCode }
-    | :? Event.Cancelled.V1 as _ -> 
+    | :? Event.Cancelled.V1 as _ ->
         { state with Status = OrderStatus.Cancelled }
-    | _ -> failwithf "Unknown event type: %A" event
+    | _ ->
+        eprintfn "Unknown event type: %s" (event.GetType().Name)
+        state
 
-let getId (command: ICommand) : Guid =
+let getId (command: ICommand) : string =
     match command with
-    | :? Command.Create.V1 as cmd -> cmd.OrderId
-    | :? Command.Create.V2 as cmd -> cmd.OrderId
-    | :? Command.Cancel.V1 as cmd -> cmd.OrderId
-    | _ -> failwithf "Unknown command type: %A" command
+    | :? Command.Create.V1 as cmd -> cmd.OrderId.ToString()
+    | :? Command.Create.V2 as cmd -> cmd.OrderId.ToString()
+    | :? Command.Cancel.V1 as cmd -> cmd.OrderId.ToString()
+    | _ ->
+        eprintfn "Unknown command type: %s" (command.GetType().Name)
+        Guid.Empty.ToString()
 
 let aggregate = {
     prefix = "order"

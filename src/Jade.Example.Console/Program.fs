@@ -2,10 +2,12 @@ open System
 open Marten
 open Testcontainers.PostgreSql
 open Serilog
+open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Logging.Abstractions
 open Jade.Core.CommandBus
 open Jade.Core.CommandRegistry
 open Jade.Core.EventSourcing
-open Jade.Core.MartenRepository
+open Jade.Marten.MartenRepository
 module C = Customer
 module O = Order
 open Jade.Example.Domain.MartenConfiguration
@@ -62,11 +64,18 @@ let demonstrateCompleteFlow () = async {
         // Set up command registry and bus
         Log.Information("🚌 Setting up command registry and bus...")
         
-        let registry = Registry()
+        let logger = NullLogger<Registry>.Instance
+        let jsonOptions = System.Text.Json.JsonSerializerOptions()
+        jsonOptions.PropertyNamingPolicy <- System.Text.Json.JsonNamingPolicy.CamelCase
+        jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
+        let registry = Registry(logger, jsonOptions)
         
         // Register Customer handler with commands
-        let customerRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, C.State> documentStore C.aggregate
-        let customerHandler = createHandler customerRepository C.aggregate C.getId
+        let loggerFactory = LoggerFactory.Create(fun builder -> builder.AddConsole() |> ignore)
+        let customerLogger = loggerFactory.CreateLogger("Customer.Repository")
+        let customerRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, C.State> customerLogger documentStore C.aggregate
+        let handlerLogger = loggerFactory.CreateLogger("Customer.Handler")
+        let customerHandler = createHandler handlerLogger customerRepository C.aggregate C.getId
         registry.register([
             typeof<C.Command.Create.V1>
             typeof<C.Command.Create.V2>
@@ -75,8 +84,10 @@ let demonstrateCompleteFlow () = async {
         Log.Information("✅ Registered CUSTOMER command handler")
         
         // Register Order handler with commands
-        let orderRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, O.State> documentStore O.aggregate
-        let orderHandler = createHandler orderRepository O.aggregate O.getId
+        let orderLogger = loggerFactory.CreateLogger("Order.Repository")
+        let orderRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, O.State> orderLogger documentStore O.aggregate
+        let orderHandlerLogger = loggerFactory.CreateLogger("Order.Handler")
+        let orderHandler = createHandler orderHandlerLogger orderRepository O.aggregate O.getId
         registry.register([
             typeof<O.Command.Create.V1>
             typeof<O.Command.Create.V2>
@@ -84,7 +95,8 @@ let demonstrateCompleteFlow () = async {
         ], orderHandler)
         Log.Information("✅ Registered ORDER command handler")
         
-        let commandBus = CommandBus(registry.GetHandler)
+        let busLogger = NullLogger<CommandBus>.Instance
+        let commandBus = CommandBus(registry.GetHandler, busLogger)
         Log.Information("✅ Command bus configured with 2 handlers")
         
         // Create and send commands
@@ -111,7 +123,7 @@ let demonstrateCompleteFlow () = async {
         | Ok () -> 
             Log.Information("✅ Customer.Create.V1 command succeeded (produced V2 event)")
             Log.Information("🔍 Verifying state was persisted in Marten...")
-            let! stateResult = customerRepository.GetById customerId
+            let! stateResult = customerRepository.GetById (customerId.ToString())
             match stateResult with
             | Ok (state, version) ->
                 Log.Information("✅ Retrieved persisted state: {state}, {version}", state, version)
@@ -135,7 +147,7 @@ let demonstrateCompleteFlow () = async {
                     // Verify final state
                     Log.Information("")
                     Log.Information("🔍 Verifying final state after update...")
-                    let! finalStateResult = customerRepository.GetById customerId
+                    let! finalStateResult = customerRepository.GetById (customerId.ToString())
                     match finalStateResult with
                     | Ok (finalState, finalVersion) ->
                         Log.Information("✅ Final persisted state: {state}, {version}", finalState, finalVersion)
@@ -194,7 +206,7 @@ let demonstrateCompleteFlow () = async {
             // Verify Order state was persisted
             Log.Information("")
             Log.Information("🔍 Verifying Order state was persisted in Marten...")
-            let! orderStateResult = orderRepository.GetById orderId
+            let! orderStateResult = orderRepository.GetById (orderId.ToString())
             match orderStateResult with
             | Ok (orderState, orderVersion) ->
                 Log.Information("✅ Retrieved persisted Order state: {orderState}, {orderVersion}", orderState, orderVersion)
@@ -231,7 +243,7 @@ let demonstrateCompleteFlow () = async {
                 // Verify the order state after cancellation
                 Log.Information("")
                 Log.Information("🔍 Verifying Order state after cancellation...")
-                let! finalOrderStateResult = orderRepository.GetById orderId
+                let! finalOrderStateResult = orderRepository.GetById (orderId.ToString())
                 match finalOrderStateResult with
                 | Ok (finalOrderState, finalOrderVersion) ->
                     Log.Information("✅ Retrieved final Order state: {finalOrderState}, {finalOrderVersion}", finalOrderState, finalOrderVersion)
