@@ -1,0 +1,42 @@
+name: Publish to NuGet
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test
+      run: dotnet run --project tests/Jade.Tests.Unit/Jade.Core.Tests.fsproj --no-build --configuration Release
+
+    - name: Pack Jade.Core
+      run: dotnet pack src/Jade.Core/Jade.Core.fsproj --configuration Release --no-build --output ./nupkgs
+
+    - name: Pack Jade.Marten
+      run: dotnet pack src/Jade.Marten/Jade.Marten.fsproj --configuration Release --no-build --output ./nupkgs
+
+    - name: Push to NuGet
+      run: |
+        dotnet nuget push ./nupkgs/Jade.Core.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkgs/Jade.Marten.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
