@@ -31,10 +31,10 @@ jobs:
       run: dotnet run --project tests/Jade.Tests.Unit/Jade.Core.Tests.fsproj --no-build --configuration Release
 
     - name: Pack Jade.Core
-      run: dotnet pack src/Jade.Core/Jade.Core.fsproj --configuration Release --no-build --output ./nupkgs
+      run: dotnet pack src/Jade.Core/Jade.Core.fsproj --configuration Release --output ./nupkgs
 
     - name: Pack Jade.Marten
-      run: dotnet pack src/Jade.Marten/Jade.Marten.fsproj --configuration Release --no-build --output ./nupkgs
+      run: dotnet pack src/Jade.Marten/Jade.Marten.fsproj --configuration Release --output ./nupkgs
 
     - name: Push to NuGet
       run: |
