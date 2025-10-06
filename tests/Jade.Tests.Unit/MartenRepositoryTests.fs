@@ -61,11 +61,14 @@ let createTestStore () = async {
     do! container.StartAsync() |> Async.AwaitTask
     let connectionString = container.GetConnectionString()
     
+    let jsonOptions = System.Text.Json.JsonSerializerOptions()
+    jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
+
     let store = Marten.DocumentStore.For(fun options ->
         options.Connection(connectionString)
         options.AutoCreateSchemaObjects <- JasperFx.AutoCreate.All
         options.DatabaseSchemaName <- "test_events"
-        configureMartenBase options
+        configureMartenBase jsonOptions options
     )
     
     return (store, container)

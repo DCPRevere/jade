@@ -14,6 +14,7 @@ open Jade.Marten.PostgreSqlContainer
 open Jade.Core.CommandBus
 open Jade.Marten.MartenRepository
 open Jade.Marten.JsonConfiguration
+open Jade.Marten.MartenConfiguration
 
 type JadeApiConfiguration = {
     ApiTitle: string
@@ -34,7 +35,7 @@ let defaultConfiguration = {
 module ServiceConfiguration =
     
     
-    let configureDatabaseWithContainer (configuration: IConfiguration) (config: JadeApiConfiguration) (martenConfig: StoreOptions -> unit) (services: IServiceCollection) =
+    let configureDatabaseWithContainer (configuration: IConfiguration) (config: JadeApiConfiguration) (jsonOptions: JsonSerializerOptions) (martenConfig: StoreOptions -> unit) (services: IServiceCollection) =
         let tempLogger = LoggerFactory.Create(fun builder -> builder.AddConsole() |> ignore).CreateLogger<obj>()
         let isDevelopment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") = "Development"
         let useContainer = config.UseContainerInDevelopment && isDevelopment
@@ -62,6 +63,10 @@ module ServiceConfiguration =
             options.Connection(connectionString)
             options.AutoCreateSchemaObjects <- JasperFx.AutoCreate.CreateOrUpdate
             options.DatabaseSchemaName <- config.DatabaseSchemaName
+
+            // Configure base Marten settings with user's JSON options
+            configureMartenBase jsonOptions options
+
             martenConfig options
         ).UseLightweightSessions() |> ignore
         
@@ -153,13 +158,17 @@ type JadeApiBuilder(builder: WebApplicationBuilder) =
         JadeApiBuilder(builder)
     
     member _.ConfigureServices(jsonConfig: JsonSerializerOptions -> unit, martenConfig: StoreOptions -> unit, registryConfig: Marten.IDocumentStore -> Registry -> unit) =
+        // Create the JsonSerializerOptions first
+        let jsonOptions = JsonSerializerOptions()
+        jsonConfig jsonOptions
+
         builder.Services
         |> configureJsonSerialization jsonConfig
-        |> ServiceConfiguration.configureDatabaseWithContainer builder.Configuration config martenConfig
+        |> ServiceConfiguration.configureDatabaseWithContainer builder.Configuration config jsonOptions martenConfig
         |> ServiceConfiguration.configureCommandBus registryConfig
         |> ServiceConfiguration.configureSwagger config
         |> ignore
-        
+
         JadeApiBuilder(builder)
     
     member _.Build() =

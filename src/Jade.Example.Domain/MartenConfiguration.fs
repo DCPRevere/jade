@@ -7,8 +7,8 @@ open Jade.Marten.MartenConfiguration
 open Jade.Example.Domain.Projections.CustomerView
 
 let configureDomainMarten (options: StoreOptions) =
-    configureMartenBase options
-    
+    // Base Marten configuration (serializer, stream identity) is now handled in ApiInfrastructure
+
     // Map Customer event types with their schema URNs - nested module structure
     options.Events.MapEventType<Customer.Event.Created.V1> "urn:schema:jade:event:customer:created:1"
     options.Events.MapEventType<Customer.Event.Created.V2> "urn:schema:jade:event:customer:created:2" 
