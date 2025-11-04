@@ -4,6 +4,7 @@ open Testcontainers.PostgreSql
 open Serilog
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.Logging.Abstractions
+open Jade.Core
 open Jade.Core.CommandBus
 open Jade.Core.CommandRegistry
 open Jade.Core.EventSourcing
@@ -12,6 +13,14 @@ module C = Customer
 module O = Order
 open Jade.Example.Domain.MartenConfiguration
 open Jade.Example.Domain.Projections.CustomerView
+
+let createMetadata () : Metadata = {
+    Id = Guid.NewGuid().ToString()
+    CorrelationId = Guid.NewGuid().ToString()
+    CausationId = None
+    UserId = Some "console-user"
+    Timestamp = Some DateTime.UtcNow
+}
 
 // Configure Serilog
 Log.Logger <- LoggerConfiguration()
@@ -109,11 +118,12 @@ let demonstrateCompleteFlow () = async {
         Log.Information("")
         Log.Information("📝 Step 1: Customer.Create.V1 (should produce Created.V2 event)")
 
-        let createCommand = 
-            { 
+        let createCommand =
+            {
                 CustomerId = customerId
                 Name = "Alice F# User"
                 Email = "alice@fsharp-demo.com"
+                Metadata = createMetadata ()
             } : C.Command.Create.V1
         
         Log.Information("📤 Sending Customer.Create.V1 through bus (expecting Created.V2 event)")
@@ -130,11 +140,12 @@ let demonstrateCompleteFlow () = async {
                 
                 Log.Information("")
                 Log.Information("📝 Step 2: Customer.Update.V1")
-                let updateCommand = 
+                let updateCommand =
                     {
                         CustomerId = customerId
                         Name = "Alice Updated via F#"
                         Email = "alice.updated@fsharp-demo.com"
+                        Metadata = createMetadata ()
                     } : C.Command.Update.V1
                 
                 Log.Information("📤 Sending Customer.Update.V1 through bus: {UpdateCommand}", updateCommand)
@@ -188,12 +199,13 @@ let demonstrateCompleteFlow () = async {
             { ProductId = Guid.NewGuid(); Quantity = 2; Price = 29.99m }
             { ProductId = Guid.NewGuid(); Quantity = 1; Price = 49.99m }
         ]
-        let createOrderCommand = 
+        let createOrderCommand =
             {
                 OrderId = orderId
                 CustomerId = customerId
                 Items = orderItems
                 PromoCode = Some "NESTED10"
+                Metadata = createMetadata ()
             } : O.Command.Create.V2
         
         Log.Information("📤 Sending Order.Create.V2 through bus")
@@ -227,10 +239,11 @@ let demonstrateCompleteFlow () = async {
             // Now cancel the order
             Log.Information("")
             Log.Information("📝 Step 4: Cancelling the Order")
-            let cancelOrderCommand = 
+            let cancelOrderCommand =
                 {
                     OrderId = orderId
                     CustomerId = customerId
+                    Metadata = createMetadata ()
                 } : O.Command.Cancel.V1
             
             Log.Information("📤 Sending Order CANCEL command through bus")

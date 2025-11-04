@@ -1,6 +1,7 @@
 module Customer
 
 open System
+open Jade.Core
 open Jade.Core.EventSourcing
 
 module Command =
@@ -9,8 +10,10 @@ module Command =
             CustomerId: Guid
             Name: string
             Email: string
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:customer:create:1"
 
@@ -19,8 +22,10 @@ module Command =
             Name: string
             Email: string
             Phone: string option
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:customer:create:2"
 
@@ -29,8 +34,10 @@ module Command =
             CustomerId: Guid
             Name: string
             Email: string
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:customer:update:1"
 
@@ -41,8 +48,10 @@ module Event =
             CustomerId: Guid
             Name: string
             Email: string
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:customer:created:1"
 
@@ -51,8 +60,10 @@ module Event =
             Name: string
             Email: string
             Phone: string option
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:customer:created:2"
     
@@ -61,8 +72,10 @@ module Event =
             CustomerId: Guid
             Name: string
             Email: string
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:customer:updated:1"
 
@@ -77,18 +90,18 @@ type State = {
 // Clean domain functions using pattern matching
 let create (command: ICommand) : Result<IEvent list, string> =
     match command with
-    | :? Command.Create.V1 as cmd -> 
+    | :? Command.Create.V1 as cmd ->
         // V1 commands now produce V2 events with Phone = None for forward compatibility
-        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = None } : Event.Created.V2) :> IEvent ]
-    | :? Command.Create.V2 as cmd -> 
-        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = cmd.Phone } : Event.Created.V2) :> IEvent ]
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = None; Metadata = Some cmd.Metadata } : Event.Created.V2) :> IEvent ]
+    | :? Command.Create.V2 as cmd ->
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Phone = cmd.Phone; Metadata = Some cmd.Metadata } : Event.Created.V2) :> IEvent ]
     | _ -> Error "Update command cannot be used for creation"
 
 let decide (command: ICommand) state : Result<IEvent list, string> =
     match command with
     | :? Command.Create.V1 | :? Command.Create.V2 -> Error "Create command cannot be used on existing aggregate"
-    | :? Command.Update.V1 as cmd -> 
-        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email } : Event.Updated.V1) :> IEvent ]
+    | :? Command.Update.V1 as cmd ->
+        Ok [ ({ CustomerId = cmd.CustomerId; Name = cmd.Name; Email = cmd.Email; Metadata = Some cmd.Metadata } : Event.Updated.V1) :> IEvent ]
     | _ -> Error "Unknown command type"
 
 let init (event: IEvent) : State =

@@ -2,14 +2,26 @@ module AggregateTests
 
 open System
 open Expecto
+open Jade.Core
 open Jade.Core.EventSourcing
 
 type TestCommand = 
     | Create of string
     | Update of string
 
-type TestCreated = { Value: string } with interface IEvent
-type TestUpdated = { Value: string } with interface IEvent
+type TestCreated = {
+    Value: string
+    Metadata: Metadata option
+} with
+    interface IEvent with
+        member this.Metadata = this.Metadata
+
+type TestUpdated = {
+    Value: string
+    Metadata: Metadata option
+} with
+    interface IEvent with
+        member this.Metadata = this.Metadata
 
 type TestState = {
     Id: Guid
@@ -20,12 +32,12 @@ let testAggregate : Aggregate<TestCommand, IEvent, TestState> = {
     prefix = "test"
     create = fun cmd ->
         match cmd with
-        | Create value -> Ok [({ TestCreated.Value = value } : TestCreated) :> IEvent]
+        | Create value -> Ok [({ Value = value; Metadata = None } : TestCreated) :> IEvent]
         | _ -> Error "Invalid create command"
-    
+
     decide = fun cmd state ->
         match cmd with
-        | Update value -> Ok [{ TestUpdated.Value = value } :> IEvent]
+        | Update value -> Ok [{ Value = value; Metadata = None } :> IEvent]
         | _ -> Error "Invalid command for existing state"
     
     evolve = fun state event ->
@@ -45,7 +57,7 @@ let testAggregate : Aggregate<TestCommand, IEvent, TestState> = {
 let aggregateTests = 
     testList "Aggregate Tests" [
         testCase "evolve function chain builds state from events" <| fun _ ->
-            let events : IEvent list = [{ TestCreated.Value = "initial" } :> IEvent; { TestUpdated.Value = "modified" } :> IEvent]
+            let events : IEvent list = [{ Value = "initial"; Metadata = None } :> IEvent; { Value = "modified"; Metadata = None } :> IEvent]
             let result = rehydrate<TestCommand, IEvent, TestState> testAggregate events
             
             match result with
@@ -77,7 +89,7 @@ let aggregateTests =
 
         testCase "evolve function applies events to state" <| fun _ ->
             let state = { Id = Guid.NewGuid(); Value = "old" }
-            let newState = testAggregate.evolve state ({ TestUpdated.Value = "new" } :> IEvent)
+            let newState = testAggregate.evolve state ({ Value = "new"; Metadata = None } :> IEvent)
             
             Expect.equal newState.Value "new" "State should be updated"
             Expect.equal newState.Id state.Id "ID should remain the same"

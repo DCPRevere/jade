@@ -1,6 +1,7 @@
 module Order
 
 open System
+open Jade.Core
 open Jade.Core.EventSourcing
 
 type OrderItem = {
@@ -19,8 +20,10 @@ module Command =
             OrderId: Guid
             CustomerId: Guid
             Items: OrderItem list
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:order:create:1"
 
@@ -29,8 +32,10 @@ module Command =
             CustomerId: Guid
             Items: OrderItem list
             PromoCode: string option
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:order:create:2"
 
@@ -38,8 +43,10 @@ module Command =
         type V1 = {
             OrderId: Guid
             CustomerId: Guid
+            Metadata: Metadata
         } with
-            interface ICommand
+            interface ICommand with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:command:order:cancel:1"
 
@@ -49,27 +56,33 @@ module Event =
             OrderId: Guid
             CustomerId: Guid
             Items: OrderItem list
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:order:created:1"
-        
+
         type V2 = {
             OrderId: Guid
             CustomerId: Guid
             Items: OrderItem list
             PromoCode: string option
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:order:created:2"
-    
+
     module Cancelled =
         type V1 = {
             OrderId: Guid
             CustomerId: Guid
+            Metadata: Metadata option
         } with
-            interface IEvent
+            interface IEvent with
+                member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:order:cancelled:1"
 
@@ -84,17 +97,17 @@ type State = {
 
 let create (command: ICommand) : Result<IEvent list, string> =
     match command with
-    | :? Command.Create.V1 as cmd -> 
-        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId; Items = cmd.Items } : Event.Created.V1) :> IEvent ]
-    | :? Command.Create.V2 as cmd -> 
-        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId; Items = cmd.Items; PromoCode = cmd.PromoCode } : Event.Created.V2) :> IEvent ]
+    | :? Command.Create.V1 as cmd ->
+        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId; Items = cmd.Items; Metadata = Some cmd.Metadata } : Event.Created.V1) :> IEvent ]
+    | :? Command.Create.V2 as cmd ->
+        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId; Items = cmd.Items; PromoCode = cmd.PromoCode; Metadata = Some cmd.Metadata } : Event.Created.V2) :> IEvent ]
     | _ -> Error "Cancel command cannot be used for creation"
 
 let decide (command: ICommand) state : Result<IEvent list, string> =
     match command with
     | :? Command.Create.V1 | :? Command.Create.V2 -> Error "Create command cannot be used on existing aggregate"
-    | :? Command.Cancel.V1 as cmd -> 
-        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId } : Event.Cancelled.V1) :> IEvent ]
+    | :? Command.Cancel.V1 as cmd ->
+        Ok [ ({ OrderId = cmd.OrderId; CustomerId = cmd.CustomerId; Metadata = Some cmd.Metadata } : Event.Cancelled.V1) :> IEvent ]
     | _ -> Error "Unknown command type"
 
 let init (event: IEvent) : State =

@@ -1,6 +1,7 @@
 module MartenRepositoryTests
 
 open Expecto
+open Jade.Core
 open Jade.Marten.MartenRepository
 open Jade.Marten.MartenConfiguration
 open Jade.Core.EventSourcing
@@ -8,8 +9,21 @@ open Marten
 open System
 open Testcontainers.PostgreSql
 
-type TestCreated = { Id: Guid; Name: string } with interface IEvent
-type TestUpdated = { Id: Guid; NewName: string } with interface IEvent
+type TestCreated = {
+    Id: Guid
+    Name: string
+    Metadata: Metadata option
+} with
+    interface IEvent with
+        member this.Metadata = this.Metadata
+
+type TestUpdated = {
+    Id: Guid
+    NewName: string
+    Metadata: Metadata option
+} with
+    interface IEvent with
+        member this.Metadata = this.Metadata
 
 type TestState = {
     Id: Guid
@@ -17,13 +31,13 @@ type TestState = {
     UpdateCount: int
 }
 
-let init (event: IEvent) = 
+let init (event: IEvent) =
     match event with
     | :? TestCreated as e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
     | :? TestUpdated as e -> { Id = e.Id; Name = e.NewName; UpdateCount = 1 }
     | _ -> failwithf "Unknown event type: %A" event
 
-let evolve state (event: IEvent) = 
+let evolve state (event: IEvent) =
     match event with
     | :? TestCreated as e -> { Id = e.Id; Name = e.Name; UpdateCount = 0 }
     | :? TestUpdated as e -> { state with Name = e.NewName; UpdateCount = state.UpdateCount + 1 }
@@ -102,7 +116,7 @@ let martenRepositoryTests =
                 let logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<MartenRepository<TestCommand, TestState, IEvent>>.Instance
                 let repository = MartenRepository(logger, store, testAggregate) :> IRepository<TestState, IEvent>
                 let aggregateId = Guid.NewGuid().ToString()
-                let events : IEvent list = [ { Id = Guid.Parse(aggregateId); Name = "Test Name" } :> IEvent ]
+                let events : IEvent list = [ { Id = Guid.Parse(aggregateId); Name = "Test Name"; Metadata = None } :> IEvent ]
                 
                 let! saveResult = repository.Save aggregateId events 0L
                 

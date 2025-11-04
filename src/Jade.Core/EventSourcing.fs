@@ -4,10 +4,12 @@ open System
 open Microsoft.Extensions.Logging
 
 /// Base interface for all domain events
-type IEvent = interface end
+type IEvent =
+    abstract member Metadata: Metadata option
 
-/// Base interface for all domain commands  
-type ICommand = interface end
+/// Base interface for all domain commands
+type ICommand =
+    abstract member Metadata: Metadata
 
 /// Unique identifier for an aggregate
 type AggregateId = string
