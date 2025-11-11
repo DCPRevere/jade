@@ -6,7 +6,7 @@ open Serilog
 
 [<CLIMutable>]
 type OrderSummary = {
-    OrderId: Guid
+    OrderId: string
     Status: string
     TotalValue: decimal
     PromoCode: string option
@@ -14,8 +14,8 @@ type OrderSummary = {
 
 [<CLIMutable>]
 type CustomerView = {
-    Id: Guid
-    CustomerId: Guid
+    Id: string
+    CustomerId: string
     Name: string
     Email: string
     Phone: string option
@@ -23,7 +23,7 @@ type CustomerView = {
 }
 
 type CustomerViewProjection() as this =
-    inherit MultiStreamProjection<CustomerView, Guid>()
+    inherit MultiStreamProjection<CustomerView, string>()
     
     do
         // Set up identity routing more carefully

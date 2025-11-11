@@ -109,7 +109,7 @@ let demonstrateCompleteFlow () = async {
         Log.Information("✅ Command bus configured with 2 handlers")
         
         // Create and send commands
-        let customerId = Guid.NewGuid()
+        let customerId = "customer-001"
         
         Log.Information("")
         Log.Information("{Separator}", String.replicate 60 "=")
@@ -133,7 +133,7 @@ let demonstrateCompleteFlow () = async {
         | Ok () -> 
             Log.Information("✅ Customer.Create.V1 command succeeded (produced V2 event)")
             Log.Information("🔍 Verifying state was persisted in Marten...")
-            let! stateResult = customerRepository.GetById (customerId.ToString())
+            let! stateResult = customerRepository.GetById customerId
             match stateResult with
             | Ok (state, version) ->
                 Log.Information("✅ Retrieved persisted state: {state}, {version}", state, version)
@@ -158,7 +158,7 @@ let demonstrateCompleteFlow () = async {
                     // Verify final state
                     Log.Information("")
                     Log.Information("🔍 Verifying final state after update...")
-                    let! finalStateResult = customerRepository.GetById (customerId.ToString())
+                    let! finalStateResult = customerRepository.GetById customerId
                     match finalStateResult with
                     | Ok (finalState, finalVersion) ->
                         Log.Information("✅ Final persisted state: {state}, {version}", finalState, finalVersion)
@@ -192,12 +192,12 @@ let demonstrateCompleteFlow () = async {
         Log.Information("{Separator}", String.replicate 60 "=")
         Log.Information("")
         
-        let orderId = Guid.NewGuid()
-        
+        let orderId = "order-001"
+
         Log.Information("📝 Step 3: Order.Create.V2 (with optional promo code)")
         let orderItems: O.OrderItem list = [
-            { ProductId = Guid.NewGuid(); Quantity = 2; Price = 29.99m }
-            { ProductId = Guid.NewGuid(); Quantity = 1; Price = 49.99m }
+            { ProductId = "product-001"; Quantity = 2; Price = 29.99m }
+            { ProductId = "product-002"; Quantity = 1; Price = 49.99m }
         ]
         let createOrderCommand =
             {
@@ -218,7 +218,7 @@ let demonstrateCompleteFlow () = async {
             // Verify Order state was persisted
             Log.Information("")
             Log.Information("🔍 Verifying Order state was persisted in Marten...")
-            let! orderStateResult = orderRepository.GetById (orderId.ToString())
+            let! orderStateResult = orderRepository.GetById orderId
             match orderStateResult with
             | Ok (orderState, orderVersion) ->
                 Log.Information("✅ Retrieved persisted Order state: {orderState}, {orderVersion}", orderState, orderVersion)
@@ -256,7 +256,7 @@ let demonstrateCompleteFlow () = async {
                 // Verify the order state after cancellation
                 Log.Information("")
                 Log.Information("🔍 Verifying Order state after cancellation...")
-                let! finalOrderStateResult = orderRepository.GetById (orderId.ToString())
+                let! finalOrderStateResult = orderRepository.GetById orderId
                 match finalOrderStateResult with
                 | Ok (finalOrderState, finalOrderVersion) ->
                     Log.Information("✅ Retrieved final Order state: {finalOrderState}, {finalOrderVersion}", finalOrderState, finalOrderVersion)

@@ -1,0 +1,380 @@
+#+title: Todo
+* Use a queue between API and backend handlers
+There is no queue between the API and backend components.
+This means that if we send two commands for the same component with the same correlation id then both commands will be processed at the same time, not one after the other.
+We need to use the command bus interface to stop this, and possibly implement that interface for RabbitMQ, or a postgres queue.
+** Relevant files
+
+Core command infrastructure:
+- src/Jade.Core/CommandBus.fs - ICommandBus interface and in-memory implementation
+- src/Jade.Core/CommandRegistry.fs - Maps schemas to command types and handlers
+- src/Jade.Core/EventSourcing.fs - ICommand/IEvent interfaces with Metadata
+- src/Jade.Core/Metadata.fs - Metadata type with CorrelationId, CausationId
+- src/Jade.Core/CloudEvents.fs - CloudEvent wrapper with Jade extensions
+
+API layer:
+- src/Jade.Marten/CloudEventsControllerBase.fs - HTTP endpoint that receives CloudEvents and calls CommandBus.Send
+- src/Jade.Example.Api/Controllers/CloudEventsController.fs - Concrete controller implementation
+- src/Jade.Example.Api/Program.fs - Wires up handlers and registry
+
+Domain:
+- src/Jade.Example.Domain/Customer.fs - Example aggregate with commands/events
+- src/Jade.Example.Domain/Order.fs - Example aggregate with commands/events
+
+** Plan
+
+*** Current architecture analysis
+
+How commands are matched to handlers currently:
+
+1. CloudEventsController receives CloudEvent with dataschema URN (e.g., "urn:schema:jade:command:customer:create:1")
+2. Registry.DeserializeCommand uses schema URN to look up command Type in schemaToType dictionary
+3. JSON payload deserialized to concrete command type (e.g., Customer.Command.Create.V1)
+4. Registry.GetHandler looks up IHandler in typeToHandler dictionary using command Type
+5. IHandler wraps an AggregateHandler<'Command, 'Event, 'State> created with:
+   - repository (loads/saves aggregate from event store)
+   - aggregate (the create/decide/init/evolve functions)
+   - getId function (extracts AggregateId from command - e.g., cmd.CustomerId.ToString())
+6. AggregateHandler.Handle calls processCommand which:
+   - Extracts aggregateId using getId function
+   - Loads aggregate state from repository (or creates new)
+   - Calls aggregate.create or aggregate.decide to produce events
+   - Saves events to repository
+
+Key insight: The mapping is Type -> IHandler, where each IHandler already knows:
+- Which aggregate type it manages (Customer vs Order)
+- How to extract the aggregate ID from any command it handles
+- How to create/decide/evolve that aggregate
+
+The same mechanism can work for queue-based processing.
+
+*** New interfaces for queue-based command processing
+
+Add to src/Jade.Core/CommandBus.fs (without modifying existing ICommandBus):
+
+#+begin_src fsharp
+// Publisher interface - writes CloudEvents to queue
+type ICommandPublisher =
+    abstract member Publish: CloudEvent -> Async<Result<unit, string>>
+
+// Receiver interface - reads CloudEvents from queue and processes them
+type ICommandReceiver =
+    abstract member StartReceiving: unit -> Async<unit>
+    abstract member StopReceiving: unit -> Async<unit>
+#+end_src
+
+Why CloudEvent instead of deserialized command?
+- Preserves dataschema URN for deserialization on receiver side
+- Preserves all CloudEvent metadata (id, source, type, time)
+- Preserves Jade extensions (correlationId, causationId, userId, tenantId)
+- No serialization round-trip issues
+- Clean separation: publisher/receiver work with CloudEvents, handlers work with commands
+
+Why ICommandPublisher and ICommandReceiver are independent from ICommandBus?
+- ICommandBus is for synchronous in-process command handling
+- ICommandPublisher is for asynchronous queue-based message publishing
+- ICommandReceiver is a background worker that processes messages from queue
+- They serve different architectural purposes and shouldn't be coupled
+
+*** CloudEvent.subject field convention
+
+CloudEvent.subject should contain the aggregate type (e.g., "customers", "orders").
+
+Extract from dataschema URN:
+- "urn:schema:jade:command:customers:create:1" → subject = "customers"
+- "urn:schema:jade:command:orders:cancel:2" → subject = "orders"
+
+In this system, CorrelationId (from Command.Metadata) identifies the aggregate instance:
+- CorrelationId = AggregateId (which stream to load)
+- Example: CorrelationId = "123" identifies order with ID 123
+
+Examples:
+- CreateOrder: subject = "orders", Metadata.CorrelationId = "123"
+- UpdateOrder: subject = "orders", Metadata.CorrelationId = "123" (same aggregate)
+- CreateCustomer: subject = "customers", Metadata.CorrelationId = "abc-456"
+
+Queue routing:
+- subject determines which queue/topic ("orders" queue vs "customers" queue)
+- CorrelationId available in Metadata for partitioning (implementation-specific)
+
+*** How receiver processes commands
+
+ICommandReceiver processes CloudEvents from queue:
+
+1. Receive CloudEvent from queue (via queue-specific mechanism - PGMQ, RabbitMQ, etc.)
+2. Extract dataschema from CloudEvent
+3. Use Registry.DeserializeCommand(dataschema, CloudEvent.Data) -> Result<obj, string>
+4. Use Registry.GetHandler(command.GetType()) -> IHandler option
+5. Call handler.Handle(command) -> Async<Result<unit, string>>
+6. Acknowledge or reject message based on result
+
+This is similar to CloudEventsController flow but:
+- Receiver gets CloudEvents from queue instead of HTTP
+- Receiver directly calls handler.Handle (doesn't use ICommandBus)
+- Receiver manages queue acknowledgment instead of HTTP response
+
+Key insight: Registry provides the mapping from schema -> command type -> handler.
+Both HTTP controller and queue receiver use the same Registry, but they are independent paths to the handler.
+
+*** Queue routing strategy
+
+Queue selection based on aggregate type (from CloudEvent.subject):
+- subject = "customers" → customers queue/topic
+- subject = "orders" → orders queue/topic
+
+Example flow:
+- CreateOrder command:
+  - dataschema = "urn:schema:jade:command:orders:create:1"
+  - Extract "orders" from URN
+  - Set subject = "orders"
+  - Publish to orders queue
+  - Metadata.CorrelationId = "123" (available for partitioning if needed)
+
+- UpdateOrder command (same order):
+  - dataschema = "urn:schema:jade:command:orders:update:1"
+  - Extract "orders" from URN
+  - Set subject = "orders"
+  - Publish to orders queue (same queue!)
+  - Metadata.CorrelationId = "123" (same aggregate instance)
+
+Partitioning within queues is implementation-specific and deferred:
+- PGMQ, RabbitMQ, or Azure Service Bus each have different partitioning mechanisms
+- CorrelationId is available in Metadata if queue implementation needs it
+- Core interface doesn't mandate specific partitioning strategy
+
+*** Handler registration - NO CHANGES NEEDED
+
+Current registration in Program.fs works as-is:
+
+#+begin_src fsharp
+registry.register([
+    typeof<Customer.Command.Create.V1>
+    typeof<Customer.Command.Create.V2>
+    typeof<Customer.Command.Update.V1>
+], customerHandler)
+#+end_src
+
+The SAME registry instance used by:
+- CloudEventsController for synchronous HTTP processing
+- ICommandReceiver for asynchronous queue processing
+
+*** Comparison: Current vs Queue-based
+
+Current (synchronous):
+- HTTP POST -> CloudEventsController
+- Validate CloudEvent
+- Deserialize command using Registry
+- Get handler using Registry
+- Call handler.Handle(command)
+- Return HTTP response with success/failure
+
+Queue-based (asynchronous):
+- HTTP POST -> CloudEventsController
+- Validate CloudEvent
+- Publish CloudEvent to queue via ICommandPublisher
+- Return HTTP 202 Accepted immediately
+- Background: ICommandReceiver receives CloudEvent from queue
+- Deserialize command using Registry (SAME Registry)
+- Get handler using Registry (SAME Registry)
+- Call handler.Handle(command) (SAME handler)
+- Acknowledge or reject queue message based on result
+
+Key differences:
+- Synchronous: HTTP request waits for processing to complete
+- Asynchronous: HTTP request completes immediately, processing happens in background
+- Queue provides durability, retry logic, and backpressure handling
+
+*** Usage flow
+
+**** Publisher usage (CloudEventsController)
+
+#+begin_src fsharp
+[<HttpPost>]
+member this.ProcessCloudEvent([<FromBody>] cloudEvent: CloudEvent) = async {
+    // 1. Validate CloudEvent structure
+    match validateCloudEvent cloudEvent with
+    | Error err -> return this.BadRequest(...)
+    | Ok validatedEvent ->
+
+        // 2. Ensure dataschema present
+        match validatedEvent.DataSchema with
+        | None -> return this.UnprocessableEntity("dataschema required")
+        | Some schema ->
+
+            // 3. Extract aggregate type from dataschema URN
+            let aggregateType = extractAggregateType schema  // "orders" from "urn:schema:jade:command:orders:create:1"
+
+            // 4. Set subject = aggregate type for queue routing
+            let cloudEventWithSubject = { validatedEvent with Subject = Some aggregateType }
+
+            // 5. Publish to queue
+            let! result = commandPublisher.Publish cloudEventWithSubject
+
+            match result with
+            | Ok () ->
+                return this.Accepted({
+                    Id = validatedEvent.Id
+                    Status = "accepted"
+                    Message = Some "Command queued for processing"
+                })
+            | Error err ->
+                return this.StatusCode(500, { ... })
+}
+#+end_src
+
+Key points:
+- Subject is set to aggregate type (e.g., "orders", "customers")
+- Publisher routes to appropriate queue based on subject
+- CorrelationId remains in CloudEvent.Jade.CorrelationId (not in subject)
+
+**** Receiver usage (Background service)
+
+#+begin_src fsharp
+type QueueCommandReceiver(
+    queueClient: IQueueClient,  // PGMQ, RabbitMQ, etc.
+    registry: Registry,
+    logger: ILogger) =
+
+    interface ICommandReceiver with
+        member _.StartReceiving() = async {
+            while not cancelled do
+                try
+                    // 1. Receive CloudEvent from queue
+                    let! cloudEvent = queueClient.Receive()
+
+                    match cloudEvent.DataSchema, cloudEvent.Data with
+                    | Some schema, Some data ->
+                        // 2. Deserialize command using Registry
+                        match registry.DeserializeCommand(schema, data) with
+                        | Ok command ->
+                            // 3. Get handler from Registry
+                            match registry.GetHandler(command.GetType()) with
+                            | Some handler ->
+                                // 4. Process command
+                                let! result = handler.Handle command
+
+                                match result with
+                                | Ok () ->
+                                    // 5. Acknowledge message
+                                    do! queueClient.Ack cloudEvent.Id
+                                | Error err ->
+                                    // 6. Reject/requeue message
+                                    do! queueClient.Nack cloudEvent.Id
+
+                            | None ->
+                                logger.LogError("No handler for command type")
+                                do! queueClient.Nack cloudEvent.Id
+
+                        | Error err ->
+                            logger.LogError("Failed to deserialize command")
+                            do! queueClient.Nack cloudEvent.Id
+
+                    | _ ->
+                        logger.LogError("Invalid CloudEvent structure")
+                        do! queueClient.Nack cloudEvent.Id
+
+                with
+                | ex -> logger.LogError(ex, "Error receiving message")
+        }
+
+        member _.StopReceiving() = async {
+            // Cancel receiving loop
+        }
+#+end_src
+
+**** Registration in Program.fs
+
+#+begin_src fsharp
+// Publisher (wraps queue client for publishing)
+builder.Services.AddSingleton<ICommandPublisher>(fun sp ->
+    let queueClient = sp.GetRequiredService<IQueueClient>()
+    let logger = sp.GetRequiredService<ILogger<QueueCommandPublisher>>()
+    QueueCommandPublisher(queueClient, logger)
+)
+
+// Receiver (background service that processes from queue)
+builder.Services.AddSingleton<ICommandReceiver>(fun sp ->
+    let queueClient = sp.GetRequiredService<IQueueClient>()
+    let registry = sp.GetRequiredService<Registry>()
+    let logger = sp.GetRequiredService<ILogger<QueueCommandReceiver>>()
+    QueueCommandReceiver(queueClient, registry, logger)
+)
+
+builder.Services.AddHostedService<CommandReceiverHostedService>()
+#+end_src
+
+** Critical design decisions
+
+*** Should receiver use ICommandBus or call handlers directly?
+
+NO, receiver should NOT use ICommandBus. They are independent paths:
+
+- ICommandBus is for synchronous in-process command handling
+- ICommandReceiver processes commands from queue asynchronously
+- Both use Registry to get handlers, but they invoke handlers independently
+- Receiver calls handler.Handle directly after getting it from Registry
+
+Rationale:
+- Clean separation of concerns
+- CommandBus implies synchronous request/response semantics
+- Queue receiver has its own lifecycle (ack/nack messages)
+- No need to couple queue processing to CommandBus abstraction
+
+*** Registry shared between HTTP controller and queue receiver?
+
+YES. Single Registry instance contains:
+- All schema -> Type mappings
+- All Type -> IHandler mappings
+
+Both CloudEventsController (sync) and ICommandReceiver (async) use the same Registry.
+This ensures consistency: same command type always routes to same handler.
+
+*** CloudEvent.subject: what should it contain?
+
+Subject should contain aggregate type (e.g., "customers", "orders"):
+
+- Extracted from dataschema URN
+- Used for queue/topic routing
+- Example: "urn:schema:jade:command:orders:create:1" → subject = "orders"
+
+CorrelationId (separate from subject):
+- In this system, CorrelationId identifies the aggregate instance
+- CorrelationId = AggregateId (which stream to load)
+- Found in CloudEvent.Jade.CorrelationId
+- Available for partitioning if queue implementation needs it
+
+*** How to extract aggregate type from dataschema URN?
+
+Parse URN pattern: urn:schema:jade:command:{aggregate-type}:{action}:{version}
+
+Example: "urn:schema:jade:command:customer:create:1" → "customer"
+
+This is used to:
+- Set CloudEvent.subject for queue routing
+- Publisher routes to appropriate queue/topic based on aggregate type
+
+*** What if handler.Handle fails?
+
+Queue-specific retry behavior (depends on queue implementation):
+- PGMQ: Use message visibility timeout or retry queue
+- RabbitMQ: Nack with requeue or send to DLX
+- Azure Service Bus: Use retry policy or dead-letter queue
+
+Receiver should nack/reject message on failure and let queue system handle retry logic.
+
+*** Sequential processing per aggregate instance?
+
+Ideally, commands with same CorrelationId (same aggregate instance) should process sequentially to prevent race conditions.
+
+However, partitioning strategy is deferred to queue implementation:
+- **PGMQ:** TBD based on capabilities
+- **RabbitMQ:** TBD based on final design
+- **Azure Service Bus:** TBD based on final design
+
+For now, the core interface just ensures:
+- Commands route to correct queue based on aggregate type (subject)
+- CorrelationId is preserved in CloudEvent.Jade.CorrelationId
+- Queue implementation can use CorrelationId for partitioning if needed
+
+Note: Even without partitioning, Marten's optimistic concurrency will prevent race conditions,
+but sequential processing is more efficient (avoids retries).

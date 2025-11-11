@@ -5,7 +5,7 @@ open Jade.Core
 open Jade.Core.EventSourcing
 
 type OrderItem = {
-    ProductId: Guid
+    ProductId: string
     Quantity: int
     Price: decimal
 }
@@ -17,8 +17,8 @@ type OrderStatus =
 module Command =
     module Create =
         type V1 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Items: OrderItem list
             Metadata: Metadata
         } with
@@ -28,8 +28,8 @@ module Command =
                 $"urn:schema:jade:command:order:create:1"
 
         type V2 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Items: OrderItem list
             PromoCode: string option
             Metadata: Metadata
@@ -41,8 +41,8 @@ module Command =
 
     module Cancel =
         type V1 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Metadata: Metadata
         } with
             interface ICommand with
@@ -53,8 +53,8 @@ module Command =
 module Event =
     module Created =
         type V1 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Items: OrderItem list
             Metadata: Metadata option
         } with
@@ -64,8 +64,8 @@ module Event =
                 $"urn:schema:jade:event:order:created:1"
 
         type V2 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Items: OrderItem list
             PromoCode: string option
             Metadata: Metadata option
@@ -77,8 +77,8 @@ module Event =
 
     module Cancelled =
         type V1 = {
-            OrderId: Guid
-            CustomerId: Guid
+            OrderId: string
+            CustomerId: string
             Metadata: Metadata option
         } with
             interface IEvent with
@@ -88,8 +88,8 @@ module Event =
 
 
 type State = {
-    Id: Guid
-    CustomerId: Guid
+    Id: string
+    CustomerId: string
     Items: OrderItem list
     Status: OrderStatus
     PromoCode: string option
@@ -118,7 +118,7 @@ let init (event: IEvent) : State =
         { Id = e.OrderId; CustomerId = e.CustomerId; Items = e.Items; Status = OrderStatus.Created; PromoCode = e.PromoCode }
     | _ ->
         eprintfn "Unknown event type: %s" (event.GetType().Name)
-        { Id = Guid.Empty; CustomerId = Guid.Empty; Items = []; Status = OrderStatus.Created; PromoCode = None }
+        { Id = ""; CustomerId = ""; Items = []; Status = OrderStatus.Created; PromoCode = None }
 
 let evolve state (event: IEvent) : State =
     match event with
@@ -134,12 +134,12 @@ let evolve state (event: IEvent) : State =
 
 let getId (command: ICommand) : string =
     match command with
-    | :? Command.Create.V1 as cmd -> cmd.OrderId.ToString()
-    | :? Command.Create.V2 as cmd -> cmd.OrderId.ToString()
-    | :? Command.Cancel.V1 as cmd -> cmd.OrderId.ToString()
+    | :? Command.Create.V1 as cmd -> cmd.OrderId
+    | :? Command.Create.V2 as cmd -> cmd.OrderId
+    | :? Command.Cancel.V1 as cmd -> cmd.OrderId
     | _ ->
         eprintfn "Unknown command type: %s" (command.GetType().Name)
-        Guid.Empty.ToString()
+        ""
 
 let aggregate = {
     prefix = "order"

@@ -7,7 +7,7 @@ open Jade.Core.EventSourcing
 module Command =
     module Create =
         type V1 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Metadata: Metadata
@@ -18,7 +18,7 @@ module Command =
                 $"urn:schema:jade:command:customer:create:1"
 
         type V2 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Phone: string option
@@ -31,7 +31,7 @@ module Command =
 
     module Update =
         type V1 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Metadata: Metadata
@@ -45,7 +45,7 @@ module Command =
 module Event =
     module Created =
         type V1 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Metadata: Metadata option
@@ -56,7 +56,7 @@ module Event =
                 $"urn:schema:jade:event:customer:created:1"
 
         type V2 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Phone: string option
@@ -66,10 +66,10 @@ module Event =
                 member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:customer:created:2"
-    
+
     module Updated =
         type V1 = {
-            CustomerId: Guid
+            CustomerId: string
             Name: string
             Email: string
             Metadata: Metadata option
@@ -81,7 +81,7 @@ module Event =
 
 
 type State = {
-    Id: Guid
+    Id: string
     Name: string
     Email: string
     Phone: string option
@@ -111,7 +111,7 @@ let init (event: IEvent) : State =
     | :? Event.Updated.V1 as e -> { Id = e.CustomerId; Name = e.Name; Email = e.Email; Phone = None }
     | _ ->
         eprintfn "Unknown event type: %s" (event.GetType().Name)
-        { Id = Guid.Empty; Name = ""; Email = ""; Phone = None }
+        { Id = ""; Name = ""; Email = ""; Phone = None }
 
 let evolve state (event: IEvent) : State =
     match event with
@@ -124,12 +124,12 @@ let evolve state (event: IEvent) : State =
 
 let getId (command: ICommand) : string =
     match command with
-    | :? Command.Create.V1 as cmd -> cmd.CustomerId.ToString()
-    | :? Command.Create.V2 as cmd -> cmd.CustomerId.ToString()
-    | :? Command.Update.V1 as cmd -> cmd.CustomerId.ToString()
+    | :? Command.Create.V1 as cmd -> cmd.CustomerId
+    | :? Command.Create.V2 as cmd -> cmd.CustomerId
+    | :? Command.Update.V1 as cmd -> cmd.CustomerId
     | _ ->
         eprintfn "Unknown command type: %s" (command.GetType().Name)
-        Guid.Empty.ToString()
+        ""
 
 let aggregate = {
     prefix = "customer"

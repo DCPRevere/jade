@@ -29,6 +29,29 @@ Automatic PostgreSQL container management in development
 
 Run with: dotnet run --project src/Jade.Example.Api
 
+### PGMQ Queue-Based Application
+
+The PGMQ example demonstrates asynchronous, queue-based command processing for scalable, distributed systems. It consists of two services:
+
+**API Service** - Accepts CloudEvents and publishes to PGMQ queues
+**Worker Service** - Consumes from queues and processes commands asynchronously
+
+This architecture provides:
+- Asynchronous command processing
+- Horizontal scalability (multiple workers)
+- Automatic retry on failure
+- Decoupling of command acceptance from execution
+- Per-aggregate queue isolation
+
+Run with:
+```bash
+# Terminal 1 - API
+dotnet run --project src/Jade.Example.Pgmq.Api
+
+# Terminal 2 - Worker
+dotnet run --project src/Jade.Example.Pgmq.Worker
+```
+
 ## Usage
 
 To use Jade in your project, follow these steps:
@@ -128,3 +151,168 @@ Process commands:
 let command = { CustomerId = Guid.NewGuid(); Name = "John"; Email = "john@example.com" }
 let! result = commandBus.Send command
 ```
+
+## Queue-Based Processing with PGMQ
+
+For distributed, asynchronous command processing, Jade supports PGMQ (PostgreSQL Message Queue). This architecture separates command acceptance from execution, providing scalability and reliability.
+
+### Architecture
+
+The queue-based approach uses two separate services:
+
+1. **API Service** - Receives CloudEvents via HTTP and publishes to PGMQ queues
+2. **Worker Service** - Consumes messages from queues and processes commands
+
+Each aggregate type gets its own queue (e.g., "customer", "order"), enabling isolated scaling and processing.
+
+### API Service Setup
+
+```fsharp
+open Microsoft.AspNetCore.Builder
+open Microsoft.Extensions.DependencyInjection
+open System.Text.Json
+open Jade.Core.CommandQueue
+open Jade.Marten.PgmqCommandPublisher
+
+let builder = WebApplication.CreateBuilder(args)
+
+// Configure JSON with F# support
+let jsonOptions = JsonSerializerOptions()
+jsonOptions.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
+jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
+
+builder.Services.AddControllers() |> ignore
+
+// Register PGMQ publisher
+let pgmqConnectionString = "Host=localhost;Port=5433;Database=jade_pgmq;Username=postgres;Password=postgres"
+builder.Services.AddSingleton<ICommandPublisher>(fun sp ->
+    let logger = sp.GetRequiredService<ILogger<PgmqCommandPublisher>>()
+    PgmqCommandPublisher(pgmqConnectionString, jsonOptions, logger) :> ICommandPublisher
+) |> ignore
+
+let app = builder.Build()
+app.MapControllers() |> ignore
+app.Run()
+```
+
+The API automatically provides a `/api/cloudevents` endpoint that accepts CloudEvents and routes them to appropriate queues based on the aggregate type extracted from the `dataschema` field.
+
+### Worker Service Setup
+
+```fsharp
+open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
+open System.Text.Json
+open Marten
+open Jade.Core.CommandRegistry
+open Jade.Marten.MartenRepository
+open Jade.Marten.PgmqCommandReceiver
+
+let builder = Host.CreateApplicationBuilder(args)
+
+let martenConnectionString = "Host=localhost;Port=5432;Database=mydb;Username=user;Password=pass"
+let pgmqConnectionString = "Host=localhost;Port=5433;Database=jade_pgmq;Username=postgres;Password=postgres"
+
+// Configure JSON
+let jsonOptions = JsonSerializerOptions()
+jsonOptions.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
+jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
+
+builder.Services.AddSingleton(jsonOptions) |> ignore
+
+// Configure Marten for event storage
+builder.Services.AddMarten(fun options ->
+    options.Connection(martenConnectionString)
+    options.AutoCreateSchemaObjects <- JasperFx.AutoCreate.CreateOrUpdate
+    configureMartenBase jsonOptions options
+).UseLightweightSessions() |> ignore
+
+// Register command handlers
+builder.Services.AddSingleton<Registry>(fun sp ->
+    let documentStore = sp.GetRequiredService<IDocumentStore>()
+    let logger = sp.GetRequiredService<ILogger<Registry>>()
+    let registry = Registry(logger, jsonOptions)
+
+    let loggerFactory = sp.GetRequiredService<ILoggerFactory>()
+
+    // Create repository and handler for each aggregate
+    let customerLogger = loggerFactory.CreateLogger("Customer.Repository")
+    let customerRepository = createRepository customerLogger documentStore Customer.aggregate
+    let handlerLogger = loggerFactory.CreateLogger("Customer.Handler")
+    let customerHandler = createHandler handlerLogger customerRepository Customer.aggregate Customer.getId
+
+    // Register command types with handler
+    registry.register([
+        typeof<Customer.Command.Create.V1>
+        typeof<Customer.Command.Update.V1>
+    ], customerHandler)
+
+    registry
+) |> ignore
+
+// Create PGMQ receivers - one per aggregate type
+builder.Services.AddSingleton<ICommandReceiver list>(fun sp ->
+    let loggerFactory = sp.GetRequiredService<ILoggerFactory>()
+    let jsonOpts = sp.GetRequiredService<JsonSerializerOptions>()
+
+    // Queue name matches aggregate prefix
+    let customerLogger = loggerFactory.CreateLogger<PgmqCommandReceiver>()
+    let customerReceiver = PgmqCommandReceiver(pgmqConnectionString, "customer", jsonOpts, customerLogger) :> ICommandReceiver
+
+    [customerReceiver]
+) |> ignore
+
+// Register the background worker
+builder.Services.AddHostedService<CommandWorker>() |> ignore
+
+let host = builder.Build()
+host.Run()
+```
+
+### Sending Commands
+
+Send commands as CloudEvents via HTTP POST:
+
+```bash
+curl -X POST http://localhost:5000/api/cloudevents \
+  -H "Content-Type: application/cloudevents+json" \
+  -d '{
+    "specversion": "1.0",
+    "type": "command",
+    "source": "my-app",
+    "id": "cmd-123",
+    "datacontenttype": "application/json",
+    "dataschema": "urn:schema:jade:command:customer:create:1",
+    "data": {
+      "customerId": "cust-001",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "metadata": {
+        "id": "meta-uuid",
+        "correlationId": "corr-uuid",
+        "causationId": null,
+        "userId": null,
+        "timestamp": "2025-11-11T10:00:00Z"
+      }
+    }
+  }'
+```
+
+### Queue Routing
+
+Queue names are automatically derived from aggregate prefixes:
+
+- Commands for `Customer` aggregate → `customer` queue
+- Commands for `Order` aggregate → `order` queue
+
+The `dataschema` URN must follow the pattern: `urn:schema:jade:command:{aggregate}:{action}:{version}`
+
+The aggregate portion determines which queue receives the message.
+
+### Scaling Workers
+
+Run multiple worker instances to process commands in parallel. Each worker will consume from all configured queues, and PGMQ ensures at-most-once processing per message.
+
+### Error Handling
+
+Failed commands are automatically retried by PGMQ. Messages remain in the queue with a visibility timeout, allowing workers to retry processing after the timeout expires.
