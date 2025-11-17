@@ -9,6 +9,7 @@ open Jade.Core.CommandBus
 open Jade.Core.CommandRegistry
 open Jade.Core.EventSourcing
 open Jade.Marten.MartenRepository
+open Jade.Marten.MartenConfiguration
 module C = Customer
 module O = Order
 open Jade.Example.Domain.MartenConfiguration
@@ -55,15 +56,20 @@ let demonstrateCompleteFlow () = async {
         
         // Set up Marten document store with async daemon enabled
         Log.Information("📦 Configuring Marten document store...")
-        let documentStore = 
+        let jsonOptions = System.Text.Json.JsonSerializerOptions()
+        jsonOptions.PropertyNamingPolicy <- System.Text.Json.JsonNamingPolicy.CamelCase
+        jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
+
+        let documentStore =
             DocumentStore.For(fun options ->
                 options.Connection(connectionString)
                 options.AutoCreateSchemaObjects <- JasperFx.AutoCreate.All
                 options.DatabaseSchemaName <- "jade_events"
-                
-                // Enable async daemon for projections
-                // options.Projections.AsyncMode <- JasperFx.Events.Daemon.DaemonMode.Solo
-                
+
+                // Configure base Marten settings including string stream identifiers
+                configureMartenBase jsonOptions options
+
+                // Configure domain-specific event mappings and projections
                 configureDomainMarten options)
         
         // Clean and initialize database
@@ -72,11 +78,8 @@ let demonstrateCompleteFlow () = async {
         
         // Set up command registry and bus
         Log.Information("🚌 Setting up command registry and bus...")
-        
+
         let logger = NullLogger<Registry>.Instance
-        let jsonOptions = System.Text.Json.JsonSerializerOptions()
-        jsonOptions.PropertyNamingPolicy <- System.Text.Json.JsonNamingPolicy.CamelCase
-        jsonOptions.Converters.Add(System.Text.Json.Serialization.JsonFSharpConverter())
         let registry = Registry(logger, jsonOptions)
         
         // Register Customer handler with commands
@@ -97,12 +100,27 @@ let demonstrateCompleteFlow () = async {
         let orderRepository = createRepository<Jade.Core.EventSourcing.ICommand, Jade.Core.EventSourcing.IEvent, O.State> orderLogger documentStore O.aggregate
         let orderHandlerLogger = loggerFactory.CreateLogger("Order.Handler")
         let orderHandler = createHandler orderHandlerLogger orderRepository O.aggregate O.getId
-        registry.register([
-            typeof<O.Command.Create.V1>
-            typeof<O.Command.Create.V2>
-            typeof<O.Command.Cancel.V1>
-        ], orderHandler)
-        Log.Information("✅ Registered ORDER command handler")
+
+        // Register custom SendConfirmation handler
+        let notificationService =
+            { new OrderNotification.INotificationService with
+                member _.SendOrderConfirmation orderId customerId = async {
+                    Log.Information("📧 Mock: Sending order confirmation email for order {OrderId} to customer {CustomerId}", orderId, customerId)
+                    return Ok ()
+                } }
+
+        let sendConfirmationLogger = loggerFactory.CreateLogger("SendConfirmationHandler")
+        let sendConfirmationHandler = OrderNotification.Handler.create sendConfirmationLogger orderRepository notificationService
+
+        registry.registerHandlers([
+            (orderHandler, [
+                typeof<O.Command.Create.V1>
+                typeof<O.Command.Create.V2>
+                typeof<O.Command.Cancel.V1>
+            ])
+            (sendConfirmationHandler, [typeof<O.Command.SendConfirmation.V1>])
+        ])
+        Log.Information("✅ Registered ORDER command handler and custom SendConfirmation handler")
         
         let busLogger = NullLogger<CommandBus>.Instance
         let commandBus = CommandBus(registry.GetHandler, busLogger)
@@ -233,9 +251,38 @@ let demonstrateCompleteFlow () = async {
                 orderStreamEvents |> Seq.iteri (fun i event ->
                     Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
                 )
+
+                // Test custom handler - SendConfirmation
+                Log.Information("")
+                Log.Information("📝 Step 3b: Send Order Confirmation (Custom Handler)")
+                let sendConfirmationCommand : O.Command.SendConfirmation.V1 = {
+                    OrderId = orderId
+                    Metadata = createMetadata ()
+                }
+
+                Log.Information("📤 Sending Order.SendConfirmation.V1 through bus")
+                let! sendConfirmationResult = commandBus.Send sendConfirmationCommand
+
+                match sendConfirmationResult with
+                | Ok () ->
+                    Log.Information("✅ Order.SendConfirmation.V1 command succeeded")
+
+                    // Verify ConfirmationSent event was recorded
+                    Log.Information("")
+                    Log.Information("🗃️ Verifying ConfirmationSent event in PostgreSQL database...")
+                    use session = documentStore.LightweightSession()
+                    let orderStreamId = $"order-{orderId}"
+                    let! confirmationStreamEvents = session.Events.FetchStreamAsync(orderStreamId) |> Async.AwaitTask
+                    Log.Information("✅ Found {EventCount} Order events in stream {StreamId}:", confirmationStreamEvents.Count, orderStreamId)
+                    confirmationStreamEvents |> Seq.iteri (fun i event ->
+                        Log.Information("   Event {EventNumber}: {EventType} (Version {EventVersion})", (i+1), event.EventTypeName, event.Version)
+                    )
+                | Error err ->
+                    Log.Error("❌ Order.SendConfirmation.V1 command failed: {ErrorMessage}", err)
+
             | Error err ->
                 Log.Error("❌ Failed to retrieve Order state: {ErrorMessage}", err)
-            
+
             // Now cancel the order
             Log.Information("")
             Log.Information("📝 Step 4: Cancelling the Order")

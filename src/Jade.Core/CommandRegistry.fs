@@ -41,6 +41,10 @@ type Registry(logger: ILogger<Registry>, jsonOptions: JsonSerializerOptions) =
             | Error err ->
                 logger.LogError("Failed to register command type {CommandType}: {Error}", commandType.Name, err)
                 eprintfn "Failed to register command type %s: %s" commandType.Name err
+
+    member this.registerHandlers(handlers: (IHandler * Type list) list) =
+        for (handler, commandTypes) in handlers do
+            this.register(commandTypes, handler)
     
     member _.TryGetType(schema: string) =
         match schemaToType.TryGetValue(schema) with

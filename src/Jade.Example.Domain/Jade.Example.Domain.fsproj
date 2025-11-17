@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="Customer.fs" />
     <Compile Include="Order.fs" />
+    <Compile Include="OrderNotification.fs" />
     <Compile Include="Projections/CustomerView.fs" />
     <Compile Include="MartenConfiguration.fs" />
   </ItemGroup>

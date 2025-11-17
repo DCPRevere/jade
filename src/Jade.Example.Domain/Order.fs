@@ -50,6 +50,16 @@ module Command =
             static member toSchema =
                 $"urn:schema:jade:command:order:cancel:1"
 
+    module SendConfirmation =
+        type V1 = {
+            OrderId: string
+            Metadata: Metadata
+        } with
+            interface ICommand with
+                member this.Metadata = this.Metadata
+            static member toSchema =
+                $"urn:schema:jade:command:order:send-confirmation:1"
+
 module Event =
     module Created =
         type V1 = {
@@ -85,6 +95,18 @@ module Event =
                 member this.Metadata = this.Metadata
             static member toSchema =
                 $"urn:schema:jade:event:order:cancelled:1"
+
+    module ConfirmationSent =
+        type V1 = {
+            OrderId: string
+            CustomerId: string
+            SentAt: System.DateTimeOffset
+            Metadata: Metadata option
+        } with
+            interface IEvent with
+                member this.Metadata = this.Metadata
+            static member toSchema =
+                $"urn:schema:jade:event:order:confirmation-sent:1"
 
 
 type State = {
@@ -140,6 +162,11 @@ let getId (command: ICommand) : string =
     | _ ->
         eprintfn "Unknown command type: %s" (command.GetType().Name)
         ""
+
+let canSendConfirmation (state: State) : Result<unit, string> =
+    match state.Status with
+    | OrderStatus.Created -> Ok ()
+    | OrderStatus.Cancelled -> Error "Cannot send confirmation for cancelled order"
 
 let aggregate = {
     prefix = "order"

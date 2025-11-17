@@ -18,6 +18,7 @@ let configureDomainMarten (options: StoreOptions) =
     options.Events.MapEventType<Order.Event.Created.V1> "urn:schema:jade:event:order:created:1"
     options.Events.MapEventType<Order.Event.Created.V2> "urn:schema:jade:event:order:created:2"
     options.Events.MapEventType<Order.Event.Cancelled.V1> "urn:schema:jade:event:order:cancelled:1"
+    options.Events.MapEventType<Order.Event.ConfirmationSent.V1> "urn:schema:jade:event:order:confirmation-sent:1"
     
     // Use async projection - MultiStreamProjection is designed for async processing
     // options.Projections.Add(CustomerViewProjection(), ProjectionLifecycle.Async)
