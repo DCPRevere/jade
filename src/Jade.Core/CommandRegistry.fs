@@ -15,19 +15,18 @@ type Registry(logger: ILogger<Registry>, jsonOptions: JsonSerializerOptions) =
     
     // Extract schema from command type using reflection
     let extractSchemaFromType (commandType: Type) : Result<string, string> =
-        let toSchemaProperty = commandType.GetProperty("toSchema", BindingFlags.Static ||| BindingFlags.Public)
-        if toSchemaProperty = null then
+        match commandType.GetProperty("toSchema", BindingFlags.Static ||| BindingFlags.Public) with
+        | null ->
             logger.LogError("Command type {CommandType} does not have a static toSchema property", commandType.Name)
             Error $"Command type {commandType.Name} does not have a static toSchema property"
-        else
+        | toSchemaProperty ->
             try
                 match toSchemaProperty.GetValue(null) with
                 | :? string as schema -> Ok schema
                 | _ ->
                     logger.LogError("toSchema property of {CommandType} must return a string", commandType.Name)
                     Error $"toSchema property of {commandType.Name} must return a string"
-            with
-            | ex ->
+            with ex ->
                 logger.LogError("Error accessing toSchema property of command type {CommandType}: {Error}", commandType.Name, ex.Message)
                 Error $"Error accessing toSchema property: {ex.Message}"
     
@@ -45,29 +44,28 @@ type Registry(logger: ILogger<Registry>, jsonOptions: JsonSerializerOptions) =
     member this.registerHandlers(handlers: (IHandler * Type list) list) =
         for (handler, commandTypes) in handlers do
             this.register(commandTypes, handler)
-    
+
     member _.TryGetType(schema: string) =
         match schemaToType.TryGetValue(schema) with
-        | true, commandType -> 
+        | true, commandType ->
             logger.LogDebug("Found command type {CommandType} for schema {Schema}", commandType.Name, schema)
             Some commandType
-        | false, _ -> 
+        | false, _ ->
             logger.LogWarning("No command type found for schema {Schema}", schema)
             None
-        
+
     member _.GetHandler(commandType: Type) =
         match typeToHandler.TryGetValue(commandType) with
-        | true, handler -> 
+        | true, handler ->
             logger.LogDebug("Found handler for command type {CommandType}", commandType.Name)
             Some handler
-        | false, _ -> 
-            let registeredTypes = typeToHandler.Keys |> Seq.map (fun t -> t.Name) |> String.concat ", "
-            logger.LogDebug("No handler found for command type {CommandType}. Registered handlers: [{RegisteredTypes}]", commandType.Name, registeredTypes)
+        | false, _ ->
+            logger.LogDebug("No handler found for command type {CommandType}", commandType.Name)
             None
     
     member _.DeserializeCommand(schema: string, json: JsonElement) : Result<obj, string> =
         match schemaToType.TryGetValue(schema) with
-        | true, commandType -> 
+        | true, commandType ->
             try
                 logger.LogDebug("Deserializing command with schema {Schema} to type {CommandType}", schema, commandType.Name)
                 let command = JsonSerializer.Deserialize(json.GetRawText(), commandType, jsonOptions)
@@ -76,7 +74,7 @@ type Registry(logger: ILogger<Registry>, jsonOptions: JsonSerializerOptions) =
             with ex ->
                 logger.LogError(ex, "Failed to deserialize command with schema {Schema}: {Error}", schema, ex.Message)
                 Error $"Failed to deserialize command: {ex.Message}"
-        | false, _ -> 
+        | false, _ ->
             logger.LogError("Unknown command schema: {Schema}", schema)
             Error $"Unknown command schema: {schema}"
     

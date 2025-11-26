@@ -14,33 +14,25 @@ type MartenRepository<'Command, 'State, 'Event when 'State: not struct and 'Even
         member this.Save aggregateId events expectedVersion = async {
             try
                 logger.LogDebug("Starting Save operation for aggregate {AggregateId} with expected version {ExpectedVersion} and {EventCount} events", aggregateId, expectedVersion, events.Length)
-                
+
                 use session = store.LightweightSession()
                 let streamId = createStreamId aggregateId
                 logger.LogDebug("Created stream ID {StreamId} for aggregate {AggregateId}", streamId, aggregateId)
-                
+
                 let eventArray = events |> List.map box |> List.toArray
-                logger.LogTrace("Converted {EventCount} events to array", eventArray.Length)
-                for i, evt in eventArray |> Array.indexed do
-                    let evtType = if isNull evt then "NULL" else evt.GetType().Name
-                    logger.LogTrace("Event [{Index}] type: {EventType}", i, evtType)
-                
+
                 if expectedVersion = 0L then
                     logger.LogDebug("Starting new event stream {StreamId}", streamId)
-                    
-                    let streamAction = session.Events.StartStream (streamId, eventArray)
-                    logger.LogDebug("Successfully started event stream {StreamId}", streamId)
+                    session.Events.StartStream (streamId, eventArray) |> ignore
                 else
                     logger.LogDebug("Appending events to existing stream {StreamId}", streamId)
                     session.Events.Append (streamId, eventArray) |> ignore
-                    logger.LogDebug("Successfully appended events to stream {StreamId}", streamId)
-                    
-                logger.LogDebug("Saving changes to event store")
+
                 do! session.SaveChangesAsync() |> Async.AwaitTask
                 logger.LogInformation("Successfully saved {EventCount} events for aggregate {AggregateId}", events.Length, aggregateId)
                 return Ok ()
             with
-            | ex -> 
+            | ex ->
                 logger.LogError(ex, "Failed to save events for aggregate {AggregateId}", aggregateId)
                 return Error ex.Message
         }
@@ -69,20 +61,21 @@ type MartenRepository<'Command, 'State, 'Event when 'State: not struct and 'Even
                                 let eventType = if e.Data <> null then e.Data.GetType().Name else "null"
                                 logger.LogError("Failed to cast event data to expected type. Event type: {EventType}, Expected: {ExpectedType}", eventType, typeof<'Event>.Name)
                                 reraise()
-                        ) 
+                        )
                         |> Seq.toList
+
                     logger.LogDebug("Mapped {EventCount} events to typed events", typedEvents.Length)
-                    
+
                     match rehydrate aggregate typedEvents with
                     | Ok finalState ->
                         let version = events |> Seq.last |> fun e -> e.Version
                         logger.LogInformation("Successfully rehydrated aggregate {AggregateId} to version {Version}", aggregateId, version)
                         return Ok (finalState, version)
-                    | Error err -> 
+                    | Error err ->
                         logger.LogError("Failed to rehydrate aggregate {AggregateId}: {Error}", aggregateId, err)
                         return Error err
             with
-            | ex -> 
+            | ex ->
                 logger.LogError(ex, "Exception in GetById operation for aggregate {AggregateId}", aggregateId)
                 return Error ex.Message
         }

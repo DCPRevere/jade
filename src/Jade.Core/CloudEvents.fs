@@ -70,37 +70,6 @@ let validateCloudEvent (ce: CloudEvent) : Result<CloudEvent, string> =
     | _ when ce.SpecVersion <> "1.0" -> Error $"Unsupported CloudEvents spec version: {ce.SpecVersion}"
     | _ -> Ok ce
 
-// Helper functions for Jade extensions
-module JadeExtensions =
-    
-    /// Create a new JadeExtension with just a correlation ID
-    let withCorrelationId correlationId = {
-        CorrelationId = Some correlationId
-        CausationId = None
-        UserId = None
-        TenantId = None
-    }
-    
-    /// Create a new JadeExtension with correlation and causation IDs
-    let withCorrelationAndCausation correlationId causationId = {
-        CorrelationId = Some correlationId
-        CausationId = Some causationId
-        UserId = None
-        TenantId = None
-    }
-    
-    /// Create a full JadeExtension
-    let create correlationId causationId userId tenantId = {
-        CorrelationId = correlationId
-        CausationId = causationId
-        UserId = userId
-        TenantId = tenantId
-    }
-    
-    /// Apply Jade extension to CloudEvent
-    let toCloudEvent (jade: JadeExtension) (ce: CloudEvent) : CloudEvent = {
-        ce with Jade = Some jade
-    }
 
 // CloudEvent response model
 type CloudEventResponse = {

@@ -15,22 +15,18 @@ type CommandBus(getHandler: Type -> IHandler option, logger: ILogger<CommandBus>
     member _.Send command = async {
         let commandType = command.GetType()
         logger.LogInformation("Sending command of type {CommandType}", commandType.Name)
-        
+
         match getHandler commandType with
-        | Some handler -> 
+        | Some handler ->
             logger.LogDebug("Found handler for command type {CommandType}", commandType.Name)
             let! result = handler.Handle command
             match result with
-            | Ok _ -> 
-                logger.LogInformation("Successfully handled command of type {CommandType}", commandType.Name)
-                return result
-            | Error err ->
-                logger.LogError("Failed to handle command of type {CommandType}: {Error}", commandType.Name, err)
-                return result
-        | None -> 
-            let errorMsg = $"No handler registered for command type {commandType.Name}"
+            | Ok () -> logger.LogInformation("Successfully handled command of type {CommandType}", commandType.Name)
+            | Error err -> logger.LogError("Failed to handle command of type {CommandType}: {Error}", commandType.Name, err)
+            return result
+        | None ->
             logger.LogError("No handler registered for command type {CommandType}. Available handlers should be registered in the command registry during application startup", commandType.Name)
-            return Error errorMsg
+            return Error $"No handler registered for command type {commandType.Name}"
     }
     
     interface ICommandBus with
@@ -42,13 +38,11 @@ let createHandler<'Command, 'Event, 'State when 'Event :> IEvent>
     (aggregate: Aggregate<'Command, 'Event, 'State>)
     (getId: 'Command -> AggregateId) : IHandler =
 
-    let aggregateHandler = AggregateHandler(logger, repository, aggregate, getId)
-
     { new IHandler with
         member _.Handle command = async {
             try
-                let typedHandler = aggregateHandler :> ICommandHandler<'Command>
-                return! typedHandler.Handle (command :?> 'Command)
+                let typedCommand = command :?> 'Command
+                return! processCommand logger repository aggregate getId typedCommand
             with
             | :? System.InvalidCastException as ex ->
                 let expectedType = typeof<'Command>.Name
